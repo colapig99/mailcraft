@@ -210,3 +210,22 @@ for this source badge. No hardcoded domain allowlist is used.
 The first directory query starts once at least three characters are typed.
 While a query is still in progress, suggestions may temporarily be empty in
 GAL-only mode. The existing short-term directory cache still applies.
+
+## Troubleshooting GAL-only omissions and source labels
+
+- With **GAL only**, enter at least **3 characters**. The compose form now
+  distinguishes "Searching GAL…" from "No GAL results" and directory failures.
+  Wait for a search to finish before assuming a name is absent.
+- The AD LDAP filter now searches `displayName`, `cn`, `givenName`, `sn`,
+  `mail`, `mailNickname`, `sAMAccountName`, and `proxyAddresses`.
+  The adapter can return a primary SMTP proxy when `mail` is empty.
+- A person present in a custom Outlook GAL can still be missed if the Base DN
+  points at a different domain, if directory permissions differ, if hidden
+  address-list rules differ, or if the directory server limits results. Test
+  full names, account aliases and complete SMTP addresses before changing AD.
+- Source label **Mail** means an address appears in the synchronized message
+  index, which includes **incoming senders** as well as recipients. It does
+  not claim the user recently contacted the address. **Checking** means its
+  GAL membership has not been resolved yet by the directory query.
+- **Contacts** comes from saved contacts, and **GAL** is based on an actual
+  matching directory reply; neither is inferred from an email domain.
