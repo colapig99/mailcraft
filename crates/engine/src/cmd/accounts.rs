@@ -461,6 +461,14 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         if ldap.bind_dn.is_some() && p::str(v, "password").is_none() && delete_password {
             return Err(CmdError::Params("new LDAP Bind DN requires its own LDAP password".into()));
         }
+        if ldap.windows_integrated {
+            if !cfg!(windows) || !ldap.url.starts_with("ldap://") || ldap.allow_insecure_anonymous
+                || ldap.bind_dn.is_some() || p::str(v, "password").is_some_and(|s| !s.is_empty())
+            {
+                return Err(CmdError::Params("Windows Integrated LDAP requires Windows, ldap://, and no Bind DN, password, or anonymous mode".into()));
+            }
+            delete_password = true;
+        }
         if ldap.allow_insecure_anonymous {
             if !ldap.url.starts_with("ldap://") || ldap.bind_dn.is_some() || p::str(v, "password").is_some_and(|s| !s.is_empty()) {
                 return Err(CmdError::Params("unencrypted LDAP may only search anonymously, with no Bind DN or password".into()));
