@@ -53,8 +53,25 @@ jobs:
         run: |
           $script = Get-Content crates/net/src/ldap_windows.ps1 -Raw
           $invalid = '{"host":"","base_dn":"","filter":"(mail=*)","port":389,"limit":5,"schema":"ad"}'
-          $response = $invalid | & powershell.exe -NoProfile -NonInteractive -Command $script 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 2 -or $response -notmatch 'LDAP_HELPER_ERROR:HelperRuntime') {
+          # Use the same stdin/stdout/stderr process contract as Rust, rather
+          # than a PowerShell pipeline (PowerShell 7 may throw for exit code 2).
+          $start = [System.Diagnostics.ProcessStartInfo]::new("powershell.exe")
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($arg in @("-NoProfile","-NonInteractive","-Command",$script)) {
+            [void]$start.ArgumentList.Add($arg)
+          }
+          $proc = [System.Diagnostics.Process]::Start($start)
+          $proc.StandardInput.Write($invalid)
+          $proc.StandardInput.Close()
+          $stdout = $proc.StandardOutput.ReadToEnd()
+          $stderr = $proc.StandardError.ReadToEnd()
+          $proc.WaitForExit()
+          Write-Host ("Helper exit code: " + $proc.ExitCode)
+          Write-Host ("Helper category: " + (($stderr -split "[`r`n]" | Where-Object { $_ -match '^LDAP_HELPER_ERROR:' }) -join ","))
+          if ($proc.ExitCode -ne 2 -or $stderr -notmatch 'LDAP_HELPER_ERROR:HelperRuntime') {
             throw "Bundled Windows LDAP helper JSON stdin/error protocol failed."
           }
       - name: Check Windows native LDAP integration
