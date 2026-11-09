@@ -30,7 +30,7 @@ can be changed to 390 in coexistence installations. Its Base DN is normally
 not an Active Directory DC= form. Verify actual server, port and search
 base from your working Thunderbird configuration or directory administrator.
 
-**Transport security**: the client only permits \`ldaps://\` or \`ldap://\`
+**Transport security**: the client only permits `ldaps://` or `ldap://`
 with mandatory STARTTLS and certificate verification. Import the enterprise
 CA into the operating system trust store if needed. Never disable verification
 or expose an obsolete Exchange server to the public internet.
@@ -44,17 +44,17 @@ run by administrators; this code intentionally does not downgrade.
 
 The session command can be invoked using the regular MailCraft CLI:
 
-\`\`\`bash
+```bash
 mailcraft-cli run account.list '{}'
 mailcraft-cli run account.ldap '{"account":"a1","url":"ldaps://gc.example.com:3269","baseDn":"DC=example,DC=com","bindDn":"user@example.com","schema":"ad"}'
 mailcraft-cli run contact.searchDirectory '{"query":"alice"}'
-\`\`\`
+```
 
 To switch off LDAP:
 
-\`\`\`bash
+```bash
 mailcraft-cli run account.ldap '{"account":"a1","disable":true}'
-\`\`\`
+```
 
 Use the same data directory as your desktop account. The app and the CLI
 should not write to the same data store concurrently.
@@ -62,9 +62,9 @@ should not write to the same data store concurrently.
 ## Schema and GAL correctness
 
 - Exchange 5.5 uses the Exchange Directory Service; the adapter prefers
-  \`rfc822Mailbox\` with fallback to \`mail\`.
-- Exchange 2003 queries AD/GC and uses \`mail\` and the
-  \`msExchHideFromAddressLists\` flag.
+  `rfc822Mailbox` with fallback to `mail`.
+- Exchange 2003 queries AD/GC and uses `mail` and the
+  `msExchHideFromAddressLists` flag.
 - This is a **candidate recipient filter**, not a full implementation of
   an organization's custom GAL query, Address Book View rules or ACLs.
 - Recipient groups are returned by their SMTP address; expanding their
@@ -77,17 +77,17 @@ should not write to the same data store concurrently.
 
 From the repository root, with Rust 1.98 and network access:
 
-\`\`\`bash
+```bash
 cargo generate-lockfile
 cargo fmt --all
 cargo test -p mailcraft-model
 cargo test -p mailcraft-net ldap
 cargo test -p mailcraft-engine directory
 cargo xtask ci
-\`\`\`
+```
 
-Commit the regenerated \`Cargo.lock\` before release. Building with
-\`--locked\` will fail until the lockfile includes the new ldap3 dependency.
+Commit the regenerated `Cargo.lock` before release. Building with
+`--locked` will fail until the lockfile includes the new ldap3 dependency.
 
 Do not use a production Exchange 5.5/2003 server as the initial test target.
 Start with a disposable LDAPv3/LDAPS directory containing synthetic people;
