@@ -124,9 +124,11 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
             LdapSchema::Exchange55 => &["rfc822Mailbox", "mail"],
             LdapSchema::ActiveDirectory => &["mail"],
         };
-        let Some(email) = first_attr(&entry, wanted).or_else(|| {
-            if settings.schema == LdapSchema::ActiveDirectory { primary_proxy_address(&entry) } else { None }
-        }) else { continue };
+        let Some(email) =
+            first_attr(&entry, wanted).or_else(|| if settings.schema == LdapSchema::ActiveDirectory { primary_proxy_address(&entry) } else { None })
+        else {
+            continue;
+        };
         if !mailcraft_model::addr::is_valid_email(&email) {
             continue;
         }
@@ -154,7 +156,9 @@ fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
 /// are fallback candidates when an AD mail attribute is absent.
 fn primary_proxy_address(entry: &SearchEntry) -> Option<String> {
     let (_, values) = entry.attrs.iter().find(|(key, _)| key.eq_ignore_ascii_case("proxyAddresses"))?;
-    values.iter().find_map(|v| v.strip_prefix("SMTP:").map(str::to_string))
+    values
+        .iter()
+        .find_map(|v| v.strip_prefix("SMTP:").map(str::to_string))
         .or_else(|| values.iter().find_map(|v| v.strip_prefix("smtp:").map(str::to_string)))
 }
 
