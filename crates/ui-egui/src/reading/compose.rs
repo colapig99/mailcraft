@@ -426,6 +426,17 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                         candidates.push(Contact { address: address.clone(), ..Default::default() });
                     }
                 }
+                // When the directory finishes, confirmed GAL entries should not
+                // be buried under an entire screen of historical mail senders.
+                candidates.sort_by_key(|c| {
+                    if directory.iter().any(|d| d.email.eq_ignore_ascii_case(&c.address.email)) {
+                        0
+                    } else if saved.iter().any(|p| p.email.eq_ignore_ascii_case(&c.address.email)) {
+                        1
+                    } else {
+                        2
+                    }
+                });
                 let candidates: Vec<Contact> =
                     candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
                 let pending = (has_directory && !query_ready && token.chars().count() >= 3)
