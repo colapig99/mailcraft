@@ -12,11 +12,13 @@ personal contacts, Exchange public folders, or MAPI/RPC support.
 4. Enter the server URL and Base DN. Optionally enter Bind DN.
 5. Save, then type at least three characters in To/Cc/Bcc or use Select Names.
 
-LDAP uses the mail account's keychain password when Bind DN is present.
+LDAP uses a **separate LDAP password** in the OS keychain when Bind DN is present.
 Anonymous directory search is attempted only when Bind DN is empty.
-The password is **never** stored in the account settings. A separate LDAP
-service-account password is not supported; use a matching per-user bind or
-extend the credential interface before introducing a shared service account.
+The password is **never** stored in account settings and is not automatically
+reused from IMAP/SMTP. Prefer a dedicated least-privilege directory reader,
+not Domain Administrator. For legacy endpoints lacking TLS, use an isolated
+TLS-terminating LDAP gateway with controlled access; never transmit privileged
+credentials using unencrypted LDAP.
 
 ### Example settings
 
@@ -110,3 +112,12 @@ then use an isolated read-only organizational test account.
 This branch has not been compiled or exercised against real servers in the
 authoring environment. A complete release requires dependency lockfile
 regeneration, CI, and LDAP protocol interoperability testing.
+
+## Site configuration caution
+
+A reported domain controller/PDC at 10.10.2.31:389 is a **site fact**, not a
+shippable default. The host of the Exchange 2003 mailbox may differ from the
+LDAP directory host. This private address must not be hard-coded in source;
+use administrator-provided settings. A classic Windows NT PDC is not
+necessarily an AD LDAP service: verify the directory type, Root DSE, and
+STARTTLS support before choosing the AD schema.
