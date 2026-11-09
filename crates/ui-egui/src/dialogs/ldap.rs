@@ -14,6 +14,7 @@ pub struct LdapForm {
     pub saved_bind_dn: String,
     pub schema: LdapSchema,
     pub allow_insecure_anonymous: bool,
+    pub windows_integrated: bool,
     pub error: Option<String>,
 }
 
@@ -30,6 +31,7 @@ impl LdapForm {
             password: String::new(),
             schema: ldap.schema,
             allow_insecure_anonymous: ldap.allow_insecure_anonymous,
+            windows_integrated: ldap.windows_integrated,
             error: None,
         }
     }
@@ -39,7 +41,7 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
     ui.set_width(490.0);
     title(ui, t, "LDAP enterprise address book");
     ui.label(RichText::new(
-        "Search your Exchange 5.5 Directory or Exchange 2003 Active Directory from recipient fields. LDAP is read-only. Connections require verified TLS."
+        "Search your Exchange 5.5 Directory or Exchange 2003 Active Directory from recipient fields. LDAP is read-only. Default TLS, or Windows domain sign-in with LDAP sealing."
     ).color(t.dim).small());
     ui.add_space(8.0);
     ui.checkbox(&mut f.enabled, "Use LDAP organisation directory");
@@ -54,7 +56,18 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
         ui.add(egui::TextEdit::singleline(&mut f.url).hint_text("ldaps://gc.example.com:3269").desired_width(width));
         ui.label("Base DN");
         ui.add(egui::TextEdit::singleline(&mut f.base_dn).hint_text("DC=company,DC=local or o=Company").desired_width(width));
-        ui.checkbox(&mut f.allow_insecure_anonymous, "Legacy mode: unencrypted anonymous LDAP (no password)");
+        if cfg!(windows) {
+            ui.checkbox(&mut f.windows_integrated, "Windows Integrated (current domain user, Negotiate + signing/sealing)");
+            if f.windows_integrated {
+                f.allow_insecure_anonymous = false;
+                f.bind_dn.clear();
+                f.password.clear();
+                ui.label(RichText::new("No password required. Use ldap://server:389; your current Windows domain identity is used.").color(t.dim).small());
+            }
+        }
+        if !f.windows_integrated {
+            ui.checkbox(&mut f.allow_insecure_anonymous, "Legacy mode: unencrypted anonymous LDAP (no password)");
+        }
         if f.allow_insecure_anonymous {
             ui.label(RichText::new("WARNING: names and search terms are transmitted without encryption. Only use on an isolated trusted network. No Bind DN or password is allowed.").color(t.warn).small());
             f.bind_dn.clear();
@@ -89,7 +102,8 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
                 "password": if f.password.is_empty() { None } else { Some(f.password.as_str()) },
                 "bindDn": if f.bind_dn.trim().is_empty() { None } else { Some(f.bind_dn.trim()) },
                 "schema": if f.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" },
-                "allowInsecureAnonymous": f.allow_insecure_anonymous
+                "allowInsecureAnonymous": f.allow_insecure_anonymous,
+                "windowsIntegrated": f.windows_integrated
             })
         } else {
             json!({"account": f.account, "disable": true})
