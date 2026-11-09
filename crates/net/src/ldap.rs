@@ -76,6 +76,9 @@ fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
 /// the OS keychain; separate LDAP service credentials are not supported yet.
 /// LDAPv2-only Exchange 5.5 installations require an isolated compatibility bridge.
 pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: &str) -> Result<Vec<(String, String)>> {
+    if settings.allow_insecure_anonymous && (settings.bind_dn.as_deref().is_some_and(|s| !s.trim().is_empty()) || password.is_some()) {
+        return Err(NetError::Refused("cleartext LDAP supports anonymous queries only; passwords are forbidden".into()));
+    }
     let filter = recipient_filter(settings.schema, query).ok_or_else(|| NetError::Refused("LDAP search must contain 1–128 characters".into()))?;
     let mut conn = ldap_connection(settings)?;
     if let Some(bind_dn) = settings.bind_dn.as_deref().filter(|s| !s.trim().is_empty()) {
