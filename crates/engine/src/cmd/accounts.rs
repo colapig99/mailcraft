@@ -92,7 +92,7 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             r#"{"account": string, "caldav"?: string (the calendar server's address: its own, the home, or one calendar; empty: found from the account's address), "carddav"?: string (the same for contacts), "username"?: string|null (its own sign-in; null: as the mail server), "password"?: string}"#,
         ),
         CommandSpec::new("account.ldap", "LDAP enterprise directory", "File › Info › Account settings", set_ldap).params(
-            r#"{"account": string, "url"?: string (ldaps:// or ldap:// with STARTTLS), "baseDn"?: string, "bindDn"?: string|null (uses the account password from the keychain), "schema"?: "exchange55"|"ad", "password"?: string (separate LDAP secret), "disable"?: bool}"#,
+            r#"{"account": string, "url"?: string (ldaps:// or ldap://), "baseDn"?: string, "bindDn"?: string|null, "schema"?: "exchange55"|"ad", "password"?: string (separate LDAP keychain secret), "windowsIntegrated"?: bool (Windows current domain identity, signing+sealing), "allowInsecureAnonymous"?: bool (anonymous only), "disable"?: bool}"#,
         ),
         CommandSpec::new("account.list", "Accounts", "File › Accounts", list_accounts),
         // Asks where MailCraft is published; File › About shows the answer (`Session::update`).
@@ -441,7 +441,7 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
             };
         }
         if !ldap.url.starts_with("ldaps://") && !ldap.url.starts_with("ldap://") {
-            return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap:// (STARTTLS is mandatory)".into()));
+            return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap://".into()));
         }
         let endpoint = ldap.url.strip_prefix("ldaps://").or_else(|| ldap.url.strip_prefix("ldap://")).unwrap_or("");
         if endpoint.is_empty()
