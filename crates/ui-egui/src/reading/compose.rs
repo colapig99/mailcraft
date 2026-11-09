@@ -359,6 +359,18 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
     let gal_mode_id = egui::Id::unique(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
     let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
     let has_directory = !s.directory_accounts().is_empty();
+    // Keep the user's active lookup visible rather than treating a pending or
+    // rejected directory query as proof that the person is absent from the GAL.
+    let active_lookup = s.compose.as_ref().and_then(|c| {
+        st.suggest_field.map(|field| {
+            let value = match field {
+                "to" => &c.to,
+                "cc" => &c.cc,
+                _ => &c.bcc,
+            };
+            mailcraft_engine::model::contacts::last_token(value).trim().to_owned()
+        })
+    });
 
     // Suggestions for the active recipient box, computed before borrowing compose.
     // The authoritative directory must be queried even when local history is full.
@@ -383,6 +395,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                 };
                 let candidates: Vec<Contact> =
                     candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
+                let pending = s.directory_pending(&token);
                 let sources = candidates
                     .iter()
                     .map(|c| {
@@ -390,8 +403,14 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                             "GAL"
                         } else if saved.iter().any(|p| p.email.eq_ignore_ascii_case(&c.address.email)) {
                             "Contacts"
+                        } else if pending {
+                            // A pending GAL request cannot yet rule out that a
+                            // history result is also a directory entry.
+                            "Checking"
                         } else {
-                            "Recent"
+                            // The mail index includes inbound senders. It does NOT
+                            // mean the user recently contacted the person.
+                            "Mail"
                         }
                     })
                     .collect();
@@ -701,6 +720,25 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                     st.suggest_dismissed = None;
                                 }
                             });
+                            if gal_only && let Some(query) = active_lookup.as_deref().filter(|q| !q.is_empty()) {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(LABEL_W - 8.0);
+                                    let message = if query.chars().count() < 3 {
+                                        "Enter at least 3 characters to search GAL"
+                                    } else if s.directory_pending(query) {
+                                        "Searching GAL…"
+                                    } else if !s.directory_errors(query).is_empty() {
+                                        "GAL search failed — directory is unavailable"
+                                    } else if suggestions.is_empty() {
+                                        "No GAL results for this spelling; try name or email alias"
+                                    } else {
+                                        ""
+                                    };
+                                    if !message.is_empty() {
+                                        ui.label(RichText::new(message).small().color(t.dim));
+                                    }
+                                });
+                            }
                         }
                     });
                 });
