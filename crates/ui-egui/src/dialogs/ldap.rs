@@ -45,17 +45,18 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
         });
         let width = ui.available_width();
         ui.label("LDAP server URL");
-        ui.add(egui::TextEdit::singleline(&mut f.url)
-            .hint_text("ldaps://gc.example.com:3269").desired_width(width));
+        ui.add(egui::TextEdit::singleline(&mut f.url).hint_text("ldaps://gc.example.com:3269").desired_width(width));
         ui.label("Base DN");
-        ui.add(egui::TextEdit::singleline(&mut f.base_dn)
-            .hint_text("DC=company,DC=local or o=Company").desired_width(width));
+        ui.add(egui::TextEdit::singleline(&mut f.base_dn).hint_text("DC=company,DC=local or o=Company").desired_width(width));
         ui.label("Bind DN (optional, uses mail account password)");
-        ui.add(egui::TextEdit::singleline(&mut f.bind_dn)
-            .hint_text("user@company.local or directory DN").desired_width(width));
-        ui.label(RichText::new(
-            "LDAP URLs use STARTTLS; LDAPS uses TLS from the start. Servers without modern TLS or LDAPv3 need a secured compatibility gateway."
-        ).color(t.faint).small());
+        ui.add(egui::TextEdit::singleline(&mut f.bind_dn).hint_text("user@company.local or directory DN").desired_width(width));
+        ui.label(
+            RichText::new(
+                "LDAP URLs use STARTTLS; LDAPS uses TLS from the start. Servers without modern TLS or LDAPv3 need a secured compatibility gateway.",
+            )
+            .color(t.faint)
+            .small(),
+        );
     }
     if let Some(e) = &f.error {
         ui.label(RichText::new(e).color(t.danger).small());

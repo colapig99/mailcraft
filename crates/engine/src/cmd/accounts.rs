@@ -408,8 +408,7 @@ pub(super) fn set_dav(s: &mut Session, v: &Value) -> CmdResult {
 /// Configure a read-only LDAP GAL provider without storing an LDAP password.
 fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
     let id = p::req_str(v, "account")?;
-    let mut config = s.account(id).map(|a| a.config.clone())
-        .ok_or_else(|| CmdError::Params(format!("no account `{id}`")))?;
+    let mut config = s.account(id).map(|a| a.config.clone()).ok_or_else(|| CmdError::Params(format!("no account `{id}`")))?;
     if config.is_local() {
         return Err(CmdError::Params("local accounts cannot search an LDAP server".into()));
     }
@@ -417,8 +416,12 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         config.ldap = None;
     } else {
         let mut ldap = config.ldap.clone().unwrap_or_default();
-        if let Some(url) = p::str(v, "url") { ldap.url = url.trim().to_string(); }
-        if let Some(dn) = p::str(v, "baseDn") { ldap.base_dn = dn.trim().to_string(); }
+        if let Some(url) = p::str(v, "url") {
+            ldap.url = url.trim().to_string();
+        }
+        if let Some(dn) = p::str(v, "baseDn") {
+            ldap.base_dn = dn.trim().to_string();
+        }
         if let Some(dn) = v.get("bindDn") {
             ldap.bind_dn = dn.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
         }
@@ -433,9 +436,12 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
             return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap:// (STARTTLS is mandatory)".into()));
         }
         let endpoint = ldap.url.strip_prefix("ldaps://").or_else(|| ldap.url.strip_prefix("ldap://")).unwrap_or("");
-        if endpoint.is_empty() || endpoint.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@'))
-            || ldap.url.len() > 512 || ldap.url.chars().any(char::is_whitespace)
-            || ldap.base_dn.is_empty() || ldap.base_dn.len() > 1024
+        if endpoint.is_empty()
+            || endpoint.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@'))
+            || ldap.url.len() > 512
+            || ldap.url.chars().any(char::is_whitespace)
+            || ldap.base_dn.is_empty()
+            || ldap.base_dn.len() > 1024
             || ldap.bind_dn.as_ref().is_some_and(|s| s.len() > 1024)
         {
             return Err(CmdError::Params("invalid LDAP URL, Base DN, or Bind DN".into()));

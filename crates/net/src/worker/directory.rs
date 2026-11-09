@@ -17,26 +17,26 @@ impl Worker {
             }
         } else {
             match &self.conn {
-            Some(Conn::Ews(c)) => c.search_directory(&query),
-            Some(Conn::Graph(_)) => match self.directory_token() {
-                Ok(token) => {
-                    let base = self.acc.graph.clone().unwrap_or_default();
-                    let r = crate::graph::search_directory(&base, &token, &query);
-                    if r.as_ref().is_err_and(crate::graph::needs_consent) {
-                        // Taken away since (an administrator, or the user in their account's
-                        // settings): asked for again.
-                        self.directory_token = None;
-                        consent = true;
+                Some(Conn::Ews(c)) => c.search_directory(&query),
+                Some(Conn::Graph(_)) => match self.directory_token() {
+                    Ok(token) => {
+                        let base = self.acc.graph.clone().unwrap_or_default();
+                        let r = crate::graph::search_directory(&base, &token, &query);
+                        if r.as_ref().is_err_and(crate::graph::needs_consent) {
+                            // Taken away since (an administrator, or the user in their account's
+                            // settings): asked for again.
+                            self.directory_token = None;
+                            consent = true;
+                        }
+                        r
                     }
-                    r
-                }
-                Err(e) => {
-                    consent = crate::graph::needs_consent(&e);
-                    Err(e)
-                }
-            },
-            Some(_) => Err(NetError::No("this account has no organisation directory".into())),
-            None => Err(NetError::Closed("not connected".into())),
+                    Err(e) => {
+                        consent = crate::graph::needs_consent(&e);
+                        Err(e)
+                    }
+                },
+                Some(_) => Err(NetError::No("this account has no organisation directory".into())),
+                None => Err(NetError::Closed("not connected".into())),
             }
         };
         let (people, error) = match r {

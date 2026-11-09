@@ -1,9 +1,9 @@
 //! LDAPv3 GAL lookup for legacy Exchange. TLS is mandatory.
 
-use std::time::Duration;
+use crate::{NetError, Result};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry, SearchOptions};
 use mailcraft_model::{LdapSchema, LdapSettings};
-use crate::{NetError, Result};
+use std::time::Duration;
 
 const MAX_RESULTS: usize = 50;
 pub const MAX_QUERY_CHARS: usize = 128;
@@ -27,12 +27,12 @@ pub fn escape_filter_value(value: &str) -> String {
 /// Candidate recipient search, not exact GAL ACL/recipient-filter equivalence.
 pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     let trimmed = query.trim();
-    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS { return None; }
+    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS {
+        return None;
+    }
     let q = escape_filter_value(trimmed);
     Some(match schema {
-        LdapSchema::Exchange55 => format!(
-            "(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"
-        ),
+        LdapSchema::Exchange55 => format!("(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"),
         LdapSchema::ActiveDirectory => format!(
             "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)))"
         ),
@@ -42,9 +42,13 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
 /// Require LDAPS or STARTTLS; never downgrade to cleartext or disable certificate validation.
 fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
     let url = settings.url.trim();
-    let starttls = if url.starts_with("ldaps://") { false }
-        else if url.starts_with("ldap://") { true }
-        else { return Err(NetError::Refused("LDAP URL must use ldaps:// or ldap:// (with STARTTLS)".into())); };
+    let starttls = if url.starts_with("ldaps://") {
+        false
+    } else if url.starts_with("ldap://") {
+        true
+    } else {
+        return Err(NetError::Refused("LDAP URL must use ldaps:// or ldap:// (with STARTTLS)".into()));
+    };
     // Endpoint only: refuse credentials embedded in URLs and LDAP URL query/filter parts.
     let authority = url.strip_prefix("ldaps://").or_else(|| url.strip_prefix("ldap://")).unwrap_or("");
     if authority.is_empty() || authority.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@')) || authority.chars().any(char::is_whitespace) {
@@ -53,11 +57,8 @@ fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
     if settings.base_dn.trim().is_empty() {
         return Err(NetError::Refused("LDAP Base DN is required".into()));
     }
-    let opts = LdapConnSettings::new()
-        .set_conn_timeout(Duration::from_secs(10))
-        .set_starttls(starttls);
-    let mut conn = LdapConn::with_settings(opts, url)
-        .map_err(|e| NetError::Tls(format!("secure LDAP connection failed: {e}")))?;
+    let opts = LdapConnSettings::new().set_conn_timeout(Duration::from_secs(10)).set_starttls(starttls);
+    let mut conn = LdapConn::with_settings(opts, url).map_err(|e| NetError::Tls(format!("secure LDAP connection failed: {e}")))?;
     conn.with_timeout(Duration::from_secs(12));
     Ok(conn)
 }
@@ -66,15 +67,16 @@ fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
 /// the OS keychain; separate LDAP service credentials are not supported yet.
 /// LDAPv2-only Exchange 5.5 installations require an isolated compatibility bridge.
 pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: &str) -> Result<Vec<(String, String)>> {
-    let filter = recipient_filter(settings.schema, query)
-        .ok_or_else(|| NetError::Refused("LDAP search must contain 1–128 characters".into()))?;
+    let filter = recipient_filter(settings.schema, query).ok_or_else(|| NetError::Refused("LDAP search must contain 1–128 characters".into()))?;
     let mut conn = ldap_connection(settings)?;
     if let Some(bind_dn) = settings.bind_dn.as_deref().filter(|s| !s.trim().is_empty()) {
-        let secret = password.filter(|s| !s.is_empty())
+        let secret = password
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| NetError::Auth("LDAP Bind DN needs mailbox credentials in the system keychain".into()))?;
         conn.simple_bind(bind_dn, secret)
             .map_err(|e| NetError::Auth(format!("LDAP bind failed: {e}")))?
-            .success().map_err(|e| NetError::Auth(format!("LDAP bind rejected: {e}")))?;
+            .success()
+            .map_err(|e| NetError::Auth(format!("LDAP bind rejected: {e}")))?;
     }
     let attrs = match settings.schema {
         LdapSchema::Exchange55 => vec!["cn", "displayName", "mail", "rfc822Mailbox"],
@@ -98,7 +100,9 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
             LdapSchema::ActiveDirectory => &["mail"],
         };
         let Some(email) = first_attr(&entry, wanted) else { continue };
-        if !mailcraft_model::addr::is_valid_email(&email) { continue; }
+        if !mailcraft_model::addr::is_valid_email(&email) {
+            continue;
+        }
         let name = first_attr(&entry, &["displayName", "cn"]).unwrap_or_default();
         if !people.iter().any(|(_, known): &(String, String)| known.eq_ignore_ascii_case(&email)) {
             people.push((name, email));

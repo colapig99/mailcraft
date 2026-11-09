@@ -240,25 +240,36 @@ fn exchange_online_asks_for_permission_to_search_its_directory() {
     done(s);
 }
 
-
 #[test]
 fn imap_account_can_search_exchange_legacy_ldap_directory() {
     let mut s = sample_session("ldap-gal");
-    let id = s.run("account.add", &json!({
-        "email": "legacy@contoso.example",
-        "password": "pw",
-        "imapHost": "mail.contoso.example",
-        "smtpHost": "mail.contoso.example"
-    })).unwrap()["account"].as_str().unwrap().to_string();
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
     s.take_jobs();
     assert!(!s.directory_accounts().contains(&id));
-    s.run("account.ldap", &json!({
-        "account": id,
-        "url": "ldaps://gc.contoso.example:3269",
-        "baseDn": "DC=contoso,DC=example",
-        "bindDn": "legacy@contoso.example",
-        "schema": "ad"
-    })).unwrap();
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id,
+            "url": "ldaps://gc.contoso.example:3269",
+            "baseDn": "DC=contoso,DC=example",
+            "bindDn": "legacy@contoso.example",
+            "schema": "ad"
+        }),
+    )
+    .unwrap();
     assert!(s.directory_accounts().contains(&id));
     assert!(s.account(&id).unwrap().config.ldap.is_some());
     s.take_jobs();
@@ -277,25 +288,42 @@ fn imap_account_can_search_exchange_legacy_ldap_directory() {
 #[test]
 fn ldap_command_validates_schema_and_tls_settings() {
     let mut s = sample_session("ldap-validation");
-    let id = s.run("account.add", &json!({
-        "email": "legacy@contoso.example",
-        "password": "pw",
-        "imapHost": "mail.contoso.example",
-        "smtpHost": "mail.contoso.example"
-    })).unwrap()["account"].as_str().unwrap().to_string();
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
     s.take_jobs();
     for (url, schema) in [("http://localhost/", "ad"), ("ldap://directory.contoso.example:389", "wrong")] {
-        assert!(s.run("account.ldap", &json!({
-            "account": id, "url": url, "baseDn": "DC=contoso,DC=example", "schema": schema
-        })).is_err());
+        assert!(
+            s.run(
+                "account.ldap",
+                &json!({
+                    "account": id, "url": url, "baseDn": "DC=contoso,DC=example", "schema": schema
+                })
+            )
+            .is_err()
+        );
     }
-    s.run("account.ldap", &json!({
-        "account": id,
-        "url": "ldaps://ex55.contoso.example:636",
-        "baseDn": "o=Contoso",
-        "schema": "exchange55"
-    })).unwrap();
-    assert_eq!(s.account(&id).unwrap().config.ldap.as_ref().unwrap().schema,
-        mailcraft_model::LdapSchema::Exchange55);
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id,
+            "url": "ldaps://ex55.contoso.example:636",
+            "baseDn": "o=Contoso",
+            "schema": "exchange55"
+        }),
+    )
+    .unwrap();
+    assert_eq!(s.account(&id).unwrap().config.ldap.as_ref().unwrap().schema, mailcraft_model::LdapSchema::Exchange55);
     done(s);
 }
