@@ -26,7 +26,7 @@ try {
         $ldap.SessionOptions.Sealing = $true
         $ldap.Credential = [System.Net.CredentialCache]::DefaultNetworkCredentials
         $ldap.Bind()
-        $attrs = [string[]]@("cn","displayName","mail","rfc822Mailbox")
+        $attrs = [string[]]@("cn","displayName","mail","rfc822Mailbox","proxyAddresses")
         $req = [System.DirectoryServices.Protocols.SearchRequest]::new(
             $baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$attrs
         )
@@ -58,6 +58,14 @@ try {
                     $vals = $entry.Attributes[$key].GetValues([string])
                     if ($vals.Count -gt 0 -and $vals[0]) { $email = [string]$vals[0]; break }
                 }
+            }
+            if (-not $email -and [string]$p.schema -eq "ad" -and $entry.Attributes.Contains("proxyAddresses")) {
+                $proxies = $entry.Attributes["proxyAddresses"].GetValues([string])
+                $primary = $proxies | Where-Object { $_.StartsWith("SMTP:", [StringComparison]::Ordinal) } | Select-Object -First 1
+                if (-not $primary) {
+                    $primary = $proxies | Where-Object { $_.StartsWith("smtp:", [StringComparison]::Ordinal) } | Select-Object -First 1
+                }
+                if ($primary) { $email = [string]$primary.Substring(5) }
             }
             if ($email) { $people += @{name=$name; email=$email} }
         }
