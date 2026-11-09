@@ -1,11 +1,11 @@
 # Read-only LDAP GAL smoke test. Windows PowerShell 5.1+; no password prompts.
 # Run from domain-joined Windows client under ordinary employee account.
-# powershell -NoProfile -File .\scripts\Test-LegacyGal.ps1 -Query "Alice"
+# powershell -NoProfile -File .\scripts\Test-LegacyGal.ps1 -Server <internal-host> -BaseDn <base-dn> -Query "Alice"
 [CmdletBinding()]
 param(
-  [string]$Server = "10.10.2.31",
+  [string]$Server = "directory.example.com",
   [int]$Port = 389,
-  [string]$BaseDn = "dc=qplhkg,dc=com",
+  [string]$BaseDn = "dc=example,dc=com",
   [string]$Query = "Alice",
   [int]$MaxResults = 5
 )
