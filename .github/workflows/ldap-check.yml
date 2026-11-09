@@ -51,3 +51,5 @@ jobs:
         run: cargo check --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui
       - name: Windows LDAP clippy
         run: cargo clippy --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui -- -D warnings
+      - name: Windows integrated configuration tests
+        run: cargo test --locked -p mailcraft-engine windows_integrated_ldap
