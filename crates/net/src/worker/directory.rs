@@ -9,7 +9,7 @@ impl Worker {
         let mut consent = false;
         let r = if let Some(settings) = self.acc.ldap.clone() {
             // Never reuse the mailbox password for a separate LDAP bind identity.
-            let ldap_secret = if settings.allow_insecure_anonymous {
+            let ldap_secret = if settings.allow_insecure_anonymous || settings.windows_integrated {
                 None // Never even read a password for plaintext LDAP.
             } else {
                 self.creds.as_ref().and_then(|c| c.get_secret(&self.acc, LDAP_SECRET))
