@@ -458,6 +458,12 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         if ldap.bind_dn.is_some() && p::str(v, "password").is_none() && delete_password {
             return Err(CmdError::Params("new LDAP Bind DN requires its own LDAP password".into()));
         }
+        if ldap.allow_insecure_anonymous {
+            if !ldap.url.starts_with("ldap://") || ldap.bind_dn.is_some() || p::str(v, "password").is_some_and(|s| !s.is_empty()) {
+                return Err(CmdError::Params("unencrypted LDAP may only search anonymously, with no Bind DN or password".into()));
+            }
+            delete_password = true;
+        }
         config.ldap = Some(ldap);
     }
     let ldap_password = p::str(v, "password").filter(|s| !s.is_empty()).map(str::to_string);
