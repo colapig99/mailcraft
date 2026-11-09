@@ -153,7 +153,7 @@ fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
 /// user input travels solely as JSON through stdin (never shell interpolation).
 #[cfg(windows)]
 fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec<(String, String)>> {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 
     #[derive(serde::Deserialize)]
@@ -201,25 +201,39 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     };
     input.write_all(body.as_bytes()).map_err(|e| NetError::Protocol(format!("cannot submit LDAP search: {e}")))?;
     drop(input);
-    // Never leave a hung helper (or a hidden console process) running forever.
-    // Poll with a deadline; bounded LDAP results are small enough for pipe buffering.
+    // Read concurrently while waiting: a full stdout pipe must never block the
+    // helper and leave an invisible PowerShell process running indefinitely.
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(NetError::Protocol("cannot read Windows LDAP helper output".into()));
+    };
+    let reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let read = stdout.take(1_048_576).read_to_end(&mut output);
+        (read, output)
+    });
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
-    loop {
-        if child.try_wait().map_err(|e| NetError::Protocol(format!("LDAP helper wait failed: {e}")))?.is_some() {
-            break;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+            _ => break None,
         }
-        if std::time::Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(NetError::Protocol("Windows LDAP query timed out after 20 seconds".into()));
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    };
+    if status.is_none() {
+        let _ = child.kill();
+        let _ = child.wait();
     }
-    let output = child.wait_with_output().map_err(|e| NetError::Protocol(format!("LDAP helper failed: {e}")))?;
-    if !output.status.success() {
+    let output = reader.join().map_err(|_| NetError::Protocol("Windows LDAP output reader failed".into()))?;
+    if status.is_none() {
+        return Err(NetError::Protocol("Windows LDAP query timed out after 20 seconds".into()));
+    }
+    output.0.map_err(|e| NetError::Protocol(format!("cannot read LDAP results: {e}")))?;
+    if !status.is_some_and(|s| s.success()) {
         return Err(NetError::Auth("Windows Integrated LDAP query rejected; verify domain credentials, signing/sealing and permissions".into()));
     }
-    let people: Vec<Person> = serde_json::from_slice(&output.stdout).map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
+    let people: Vec<Person> = serde_json::from_slice(&output.1).map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
     let mut results = Vec::new();
     for p in people.into_iter().take(MAX_RESULTS) {
         if !mailcraft_model::addr::is_valid_email(&p.email) {
