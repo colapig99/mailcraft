@@ -372,8 +372,32 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         })
     });
 
+    // Issue the LDAP search only after 350 ms of typing inactivity: the PDC
+    // must not queue every intermediate name prefix on a slow connection.
+    let query_ready = if let Some(query) = active_lookup.as_deref().filter(|q| q.chars().count() >= 3) {
+        let key = egui::Id::unique(("compose-gal-query", s.compose.as_ref().map(|c| c.id)));
+        let now = ui.ctx().input(|i| i.time);
+        let ready = ui.ctx().data_mut(|d| {
+            let previous = d.get_temp::<(String, f64)>(key);
+            if let Some((old, changed_at)) = previous
+                && old == query
+            {
+                now - changed_at >= 0.35
+            } else {
+                d.insert_temp(key, (query.to_owned(), now));
+                false
+            }
+        });
+        if !ready {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
+        }
+        ready
+    } else {
+        false
+    };
+
     // Suggestions for the active recipient box, computed before borrowing compose.
-    // The authoritative directory must be queried even when local history is full.
+    // Only the debounced query may schedule a new LDAP search.
     let (suggestions, suggestion_sources): (Vec<Contact>, Vec<&'static str>) = match (st.suggest_field, s.compose.as_ref()) {
         (Some(f), Some(c)) => {
             let text = match f {
@@ -386,16 +410,26 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                 (Vec::new(), Vec::new())
             } else {
                 let present = text.to_lowercase();
-                let directory = s.address_book("directory", &token);
+                let directory = if query_ready { s.address_book("directory", &token) } else { Vec::new() };
                 let saved = if gal_only { Vec::new() } else { s.address_book("people", &token) };
-                let candidates: Vec<Contact> = if gal_only {
-                    directory.iter().cloned().map(|address| Contact { address, ..Default::default() }).collect()
+                let mut candidates: Vec<Contact> = if gal_only {
+                    Vec::new()
                 } else {
-                    s.suggest_contacts(&token, 8)
+                    s.suggest_local_contacts(&token, 8)
                 };
+                for address in &directory {
+                    if let Some(existing) = candidates.iter_mut().find(|c| c.address.email.eq_ignore_ascii_case(&address.email)) {
+                        if !address.name.is_empty() {
+                            existing.address.name.clone_from(&address.name);
+                        }
+                    } else {
+                        candidates.push(Contact { address: address.clone(), ..Default::default() });
+                    }
+                }
                 let candidates: Vec<Contact> =
                     candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
-                let pending = s.directory_pending(&token);
+                let pending = (has_directory && !query_ready && token.chars().count() >= 3)
+                    || s.directory_pending(&token);
                 let sources = candidates
                     .iter()
                     .map(|c| {
@@ -725,7 +759,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                     ui.add_space(LABEL_W - 8.0);
                                     let message = if query.chars().count() < 3 {
                                         "Enter at least 3 characters to search GAL"
-                                    } else if s.directory_pending(query) {
+                                    } else if !query_ready || s.directory_pending(query) {
                                         "Searching GAL…"
                                     } else if !s.directory_errors(query).is_empty() {
                                         "GAL search failed — directory is unavailable"
