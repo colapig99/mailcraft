@@ -177,8 +177,9 @@ pub enum LdapSchema {
 }
 
 /// Read-only enterprise address book, separate from mail transport.
-/// Passwords are never stored here: if bind_dn is present, the mail account's
-/// keychain credential is used. LDAP must use certificate-verified TLS.
+/// Passwords are never stored here. LDAP credentials have their own keychain entry.
+/// Secure TLS is the default. An explicit exception permits anonymous LDAP
+/// on isolated legacy intranets; no password is sent on that connection.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LdapSettings {
