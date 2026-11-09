@@ -29,6 +29,7 @@ impl LdapForm {
             bind_dn: ldap.bind_dn.unwrap_or_default(),
             password: String::new(),
             schema: ldap.schema,
+            allow_insecure_anonymous: ldap.allow_insecure_anonymous,
             error: None,
         }
     }
