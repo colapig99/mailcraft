@@ -37,7 +37,7 @@ function First-Attr($entry,[string]$name) {
   return [string]$values[0]
 }
 $escaped = Escape-Filter $Query.Trim()
-$filter = "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*$escaped*)(displayName=*$escaped*)(mail=*$escaped*)))"
+$filter = "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*$escaped*)(displayName=*$escaped*)(mail=*$escaped*)(mailNickname=*$escaped*)(sAMAccountName=*$escaped*)(givenName=*$escaped*)(sn=*$escaped*)(proxyAddresses=*$escaped*)))"
 Write-Host ("Server: {0}:{1} Base: {2}" -f $Server,$Port,$BaseDn)
 Write-Host "Using no password for anonymous mode and current Windows sign-in for Negotiate."
 Write-Host "Run only on an isolated/trusted LAN; anonymous LDAP queries are not encrypted."
