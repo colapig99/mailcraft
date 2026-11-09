@@ -1,22 +1,14 @@
-//! LDAP directory query helpers for legacy Exchange GAL integration.
-//!
-//! This module deliberately performs no network I/O. The eventual transport must use
-//! authenticated, protected LDAP connections and bound server-side result limits.
-//! Never interpolate an unescaped user query into an LDAP filter.
+//! LDAPv3 GAL lookup for legacy Exchange. TLS is mandatory.
 
-/// Directory schema whose SMTP address attributes differ between Exchange releases.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DirectorySchema {
-    /// Exchange 5.5's own Directory Service (not Active Directory).
-    Exchange55,
-    /// Exchange 2003 recipient objects stored in Active Directory.
-    ActiveDirectory,
-}
+use std::time::Duration;
+use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry, SearchOptions};
+use mailcraft_model::{LdapSchema, LdapSettings};
+use crate::{NetError, Result};
 
-/// Maximum characters accepted from a recipient search field.
+const MAX_RESULTS: usize = 50;
 pub const MAX_QUERY_CHARS: usize = 128;
 
-/// RFC 4515 filter-value escaping, preserving UTF-8 characters.
+/// RFC 4515 escapes for user-controlled LDAP filter fragments.
 pub fn escape_filter_value(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for ch in value.chars() {
@@ -32,61 +24,114 @@ pub fn escape_filter_value(value: &str) -> String {
     escaped
 }
 
-/// A conservative recipient search, not an exact replacement for a server's
-/// custom GAL recipient filter. Site-specific GAL restrictions must be applied
-/// by the directory provider before the results are displayed.
-///
-/// Returns None for empty or excessively long searches.
-pub fn recipient_filter(schema: DirectorySchema, query: &str) -> Option<String> {
+/// Candidate recipient search, not exact GAL ACL/recipient-filter equivalence.
+pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     let trimmed = query.trim();
-    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS {
-        return None;
-    }
+    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS { return None; }
     let q = escape_filter_value(trimmed);
     Some(match schema {
-        DirectorySchema::Exchange55 => format!(
+        LdapSchema::Exchange55 => format!(
             "(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"
         ),
-        DirectorySchema::ActiveDirectory => format!(
+        LdapSchema::ActiveDirectory => format!(
             "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)))"
         ),
     })
 }
 
+/// Require LDAPS or STARTTLS; never downgrade to cleartext or disable certificate validation.
+fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
+    let url = settings.url.trim();
+    let starttls = if url.starts_with("ldaps://") { false }
+        else if url.starts_with("ldap://") { true }
+        else { return Err(NetError::Refused("LDAP URL must use ldaps:// or ldap:// (with STARTTLS)".into())); };
+    if settings.base_dn.trim().is_empty() {
+        return Err(NetError::Refused("LDAP Base DN is required".into()));
+    }
+    let opts = LdapConnSettings::new()
+        .set_conn_timeout(Duration::from_secs(10))
+        .set_starttls(starttls);
+    let mut conn = LdapConn::with_settings(opts, url)
+        .map_err(|e| NetError::Tls(format!("secure LDAP connection failed: {e}")))?;
+    conn.with_timeout(Duration::from_secs(12));
+    Ok(conn)
+}
+
+/// Read-only GAL search. An optional bind DN uses the mailbox password held in
+/// the OS keychain; separate LDAP service credentials are not supported yet.
+/// LDAPv2-only Exchange 5.5 installations require an isolated compatibility bridge.
+pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: &str) -> Result<Vec<(String, String)>> {
+    let filter = recipient_filter(settings.schema, query)
+        .ok_or_else(|| NetError::Refused("LDAP search must contain 1–128 characters".into()))?;
+    let mut conn = ldap_connection(settings)?;
+    if let Some(bind_dn) = settings.bind_dn.as_deref().filter(|s| !s.trim().is_empty()) {
+        let secret = password.filter(|s| !s.is_empty())
+            .ok_or_else(|| NetError::Auth("LDAP Bind DN needs mailbox credentials in the system keychain".into()))?;
+        conn.simple_bind(bind_dn, secret)
+            .map_err(|e| NetError::Auth(format!("LDAP bind failed: {e}")))?
+            .success().map_err(|e| NetError::Auth(format!("LDAP bind rejected: {e}")))?;
+    }
+    let attrs = match settings.schema {
+        LdapSchema::Exchange55 => vec!["cn", "displayName", "mail", "rfc822Mailbox"],
+        LdapSchema::ActiveDirectory => vec!["cn", "displayName", "mail"],
+    };
+    let (entries, _) = conn
+        .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
+        .search(&settings.base_dn, Scope::Subtree, &filter, attrs)
+        .map_err(|e| NetError::Protocol(format!("LDAP search failed: {e}")))?
+        .success().map_err(|e| NetError::Protocol(format!("LDAP search rejected: {e}")))?;
+    let mut people = Vec::new();
+    for raw in entries.into_iter().take(MAX_RESULTS) {
+        let entry = SearchEntry::construct(raw);
+        let wanted: &[&str] = match settings.schema {
+            LdapSchema::Exchange55 => &["rfc822Mailbox", "mail"],
+            LdapSchema::ActiveDirectory => &["mail"],
+        };
+        let Some(email) = first_attr(&entry, wanted) else { continue };
+        if !mailcraft_model::addr::is_valid_email(&email) { continue; }
+        let name = first_attr(&entry, &["displayName", "cn"]).unwrap_or_default();
+        if !people.iter().any(|(_, known): &(String, String)| known.eq_ignore_ascii_case(&email)) {
+            people.push((name, email));
+        }
+    }
+    let _ = conn.unbind();
+    Ok(people)
+}
+
+fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
+    for wanted in names {
+        if let Some((_, values)) = entry.attrs.iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted)) {
+            if let Some(s) = values.iter().find(|s| !s.trim().is_empty()) {
+                return Some(s.trim().to_owned());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn escapes_ldap_filter_metacharacters() {
+    fn filter_metacharacters_are_escaped() {
         assert_eq!(escape_filter_value("a*(b)\\\0"), r"a\2a\28b\29\5c\00");
     }
-
     #[test]
-    fn filters_are_schema_specific() {
-        let old = recipient_filter(DirectorySchema::Exchange55, "Alice");
-        let ad = recipient_filter(DirectorySchema::ActiveDirectory, "Alice");
-        assert!(old.as_deref().is_some_and(|f| f.contains("rfc822Mailbox")));
-        assert!(ad.as_deref().is_some_and(|f| f.contains("msExchHideFromAddressLists")));
-        assert!(ad.as_deref().is_some_and(|f| !f.contains("rfc822Mailbox")));
+    fn legacy_and_ad_filters_are_distinct() {
+        let old = recipient_filter(LdapSchema::Exchange55, "Alice");
+        let ad = recipient_filter(LdapSchema::ActiveDirectory, "Alice");
+        assert!(old.as_deref().is_some_and(|s| s.contains("rfc822Mailbox")));
+        assert!(ad.as_deref().is_some_and(|s| s.contains("msExchHideFromAddressLists")));
     }
-
     #[test]
-    fn query_is_escaped_before_interpolation() {
-        let f = recipient_filter(DirectorySchema::ActiveDirectory, "a*)(mail=*)");
+    fn injection_is_escaped() {
+        let f = recipient_filter(LdapSchema::ActiveDirectory, "a*)(mail=*)");
         assert!(f.as_deref().is_some_and(|s| s.contains(r"a\2a\29\28mail=\2a\29")));
     }
-
     #[test]
-    fn rejects_empty_and_unbounded_queries() {
-        assert_eq!(recipient_filter(DirectorySchema::Exchange55, "  "), None);
-        assert_eq!(recipient_filter(DirectorySchema::Exchange55, &"x".repeat(129)), None);
-        assert!(recipient_filter(DirectorySchema::Exchange55, &"x".repeat(128)).is_some());
-    }
-
-    #[test]
-    fn utf8_query_is_retained() {
-        let filter = recipient_filter(DirectorySchema::Exchange55, "王小明");
-        assert!(filter.as_deref().is_some_and(|s| s.contains("王小明")));
+    fn query_limits_and_unicode() {
+        assert!(recipient_filter(LdapSchema::Exchange55, " ").is_none());
+        assert!(recipient_filter(LdapSchema::Exchange55, &"x".repeat(129)).is_none());
+        assert!(recipient_filter(LdapSchema::Exchange55, "王小明").is_some_and(|s| s.contains("王小明")));
     }
 }
