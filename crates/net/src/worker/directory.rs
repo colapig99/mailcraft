@@ -1,5 +1,5 @@
 //! An account's worker: searching the organisation's directory (issue #9) on
-//! on-premises Exchange (EWS) and Exchange Online (Graph, with a sign-in of its own).
+//! on-premises Exchange (EWS/LDAP) and Exchange Online (Graph).
 
 use super::*;
 
@@ -7,7 +7,16 @@ impl Worker {
     /// Look `query` up in the account's directory and say who was found.
     pub(super) fn search_directory(&mut self, query: String) {
         let mut consent = false;
-        let r = match &self.conn {
+        let r = if let Some(settings) = self.acc.ldap.clone() {
+            // LDAP directories work alongside IMAP/SMTP accounts. Read the existing
+            // account password from its keychain only when a bind DN was supplied.
+            if settings.bind_dn.as_deref().is_some_and(|dn| !dn.trim().is_empty()) {
+                self.secret().and_then(|secret| crate::ldap::search_directory(&settings, Some(&secret), &query))
+            } else {
+                crate::ldap::search_directory(&settings, None, &query)
+            }
+        } else {
+            match &self.conn {
             Some(Conn::Ews(c)) => c.search_directory(&query),
             Some(Conn::Graph(_)) => match self.directory_token() {
                 Ok(token) => {
@@ -28,6 +37,7 @@ impl Worker {
             },
             Some(_) => Err(NetError::No("this account has no organisation directory".into())),
             None => Err(NetError::Closed("not connected".into())),
+            }
         };
         let (people, error) = match r {
             Ok(p) => (p, None),
