@@ -9,7 +9,11 @@ impl Worker {
         let mut consent = false;
         let r = if let Some(settings) = self.acc.ldap.clone() {
             // Never reuse the mailbox password for a separate LDAP bind identity.
-            let ldap_secret = self.creds.as_ref().and_then(|c| c.get_secret(&self.acc, LDAP_SECRET));
+            let ldap_secret = if settings.allow_insecure_anonymous {
+                None // Never even read a password for plaintext LDAP.
+            } else {
+                self.creds.as_ref().and_then(|c| c.get_secret(&self.acc, LDAP_SECRET))
+            };
             crate::ldap::search_directory(&settings, ldap_secret.as_deref(), &query)
         } else {
             match &self.conn {
