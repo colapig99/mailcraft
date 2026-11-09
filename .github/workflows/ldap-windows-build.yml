@@ -7,6 +7,7 @@ on:
       - 'crates/net/src/ldap.rs'
       - 'crates/net/src/ldap_windows.ps1'
       - 'crates/ui-egui/src/dialogs/ldap.rs'
+      - 'crates/ui-egui/src/reading/compose.rs'
   workflow_dispatch:
 permissions:
   contents: read
