@@ -356,7 +356,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         .collect();
     // Keep the mode per compose message and window; a different message should not
     // inherit a potentially restrictive GAL-only setting. Default is mixed.
-    let gal_mode_id = egui::Id::unique(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
+    let gal_mode_id = ui.make_persistent_id(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
     let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
     let has_directory = !s.directory_accounts().is_empty();
     // Keep the user's active lookup visible rather than treating a pending or
@@ -375,7 +375,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
     // Issue the LDAP search only after 350 ms of typing inactivity: the PDC
     // must not queue every intermediate name prefix on a slow connection.
     let query_ready = if let Some(query) = active_lookup.as_deref().filter(|q| q.chars().count() >= 3) {
-        let key = egui::Id::unique(("compose-gal-query", s.compose.as_ref().map(|c| c.id)));
+        let key = ui.make_persistent_id(("compose-gal-query", s.compose.as_ref().map(|c| c.id)));
         let now = ui.ctx().input(|i| i.time);
         let ready = ui.ctx().data_mut(|d| {
             let previous = d.get_temp::<(String, f64)>(key);
