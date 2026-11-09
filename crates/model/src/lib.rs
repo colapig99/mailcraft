@@ -191,6 +191,9 @@ pub struct LdapSettings {
     /// Explicit opt-in: unencrypted LDAP is permitted ONLY without Bind DN.
     /// Never send credentials on this connection, even if supplied by mistake.
     pub allow_insecure_anonymous: bool,
+    /// On Windows, bind using the logged-on domain identity (SSPI Negotiate)
+    /// with LDAP signing and sealing. No application-managed LDAP password.
+    pub windows_integrated: bool,
 }
 
 /// Longest User-Agent an account can name.
