@@ -1,4 +1,5 @@
 name: Prepare legacy LDAP branch
+# One-time formatting after dedicated LDAP credentials changes.
 
 on:
   push:
