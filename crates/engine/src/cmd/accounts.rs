@@ -463,10 +463,7 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
     }
     let updated = s.update_account(config.clone(), None)?;
     if delete_password || ldap_password.is_some() {
-        s.push_job(mailcraft_model::Job::LdapPassword {
-            account: config,
-            password: mailcraft_model::job::Secret(ldap_password.unwrap_or_default()),
-        });
+        s.push_job(mailcraft_model::Job::LdapPassword { account: config, password: mailcraft_model::job::Secret(ldap_password.unwrap_or_default()) });
     }
     s.directory.answers.clear();
     s.directory.rev = s.directory.rev.wrapping_add(1);

@@ -69,9 +69,7 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
     if let Some(e) = &f.error {
         ui.label(RichText::new(e).color(t.danger).small());
     }
-    let credential_ready = f.bind_dn.trim().is_empty()
-        || f.bind_dn.trim() == f.saved_bind_dn.trim()
-        || !f.password.is_empty();
+    let credential_ready = f.bind_dn.trim().is_empty() || f.bind_dn.trim() == f.saved_bind_dn.trim() || !f.password.is_empty();
     let ready = !f.enabled || (!f.url.trim().is_empty() && !f.base_dn.trim().is_empty() && credential_ready);
     let (ok, cancel) = buttons(ui, t, "Save", ready);
     if ok && ready {
