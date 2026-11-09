@@ -36,7 +36,7 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     Some(match schema {
         LdapSchema::Exchange55 => format!("(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"),
         LdapSchema::ActiveDirectory => format!(
-            "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)))"
+            "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
         ),
     })
 }
@@ -278,6 +278,16 @@ mod tests {
         let secured_bind = LdapSettings { bind_dn: Some("cn=reader,dc=example,dc=com".into()), ..settings };
         assert!(search_directory(&secured_bind, None, "Alice").is_err());
     }
+    #[test]
+    fn ad_directory_search_includes_alias_and_logon_name() {
+        let filter = recipient_filter(LdapSchema::ActiveDirectory, "toney").unwrap();
+        assert!(filter.contains("(sAMAccountName=*toney*)"));
+        assert!(filter.contains("(mailNickname=*toney*)"));
+        assert!(filter.contains("(proxyAddresses=*toney*)"));
+        assert!(filter.contains("(givenName=*toney*)"));
+        assert!(filter.contains("(sn=*toney*)"));
+    }
+
     #[test]
     fn query_limits_and_unicode() {
         assert!(recipient_filter(LdapSchema::Exchange55, " ").is_none());
