@@ -239,6 +239,7 @@ pub(super) fn add_account(s: &mut Session, v: &Value) -> CmdResult {
         shared_mailboxes: Vec::new(),
         online_only: p::bool(v, "onlineOnly").unwrap_or(false),
         dav: None,
+        ldap: None,
         user_agent,
     };
     // A line break or tab pasted in with the user name: no server would ever take it (in an
