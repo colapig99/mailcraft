@@ -433,7 +433,7 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
             return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap:// (STARTTLS is mandatory)".into()));
         }
         let endpoint = ldap.url.strip_prefix("ldaps://").or_else(|| ldap.url.strip_prefix("ldap://")).unwrap_or("");
-        if endpoint.is_empty() || endpoint.contains(['/', '?', '#', '@'])
+        if endpoint.is_empty() || endpoint.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@'))
             || ldap.url.len() > 512 || ldap.url.chars().any(char::is_whitespace)
             || ldap.base_dn.is_empty() || ldap.base_dn.len() > 1024
             || ldap.bind_dn.as_ref().is_some_and(|s| s.len() > 1024)
