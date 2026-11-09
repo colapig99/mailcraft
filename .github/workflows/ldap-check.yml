@@ -29,3 +29,16 @@ jobs:
         run: |
           cargo test --locked -p mailcraft-net ldap
           cargo test --locked -p mailcraft-engine directory
+
+  windows-ldap-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt, clippy
+      - name: Check Windows native LDAP integration
+        run: cargo check --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui
+      - name: Windows LDAP clippy
+        run: cargo clippy --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui -- -D warnings
