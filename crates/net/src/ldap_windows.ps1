@@ -82,8 +82,7 @@ try {
         $kind = "DirectoryOperation"
         if ($_.Exception.Response) {
             $code = [string]$_.Exception.Response.ResultCode
-            if ($code -match '^[A-Za-z0-9_]+
-) { $kind += ":" + $code }
+            if ($code.Length -gt 0 -and $code -notmatch '[^A-Za-z0-9_]') { $kind += ":" + $code }
         }
     } elseif ($_.Exception -is [System.DirectoryServices.Protocols.LdapException]) {
         $kind = "LdapTransport"
