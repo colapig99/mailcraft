@@ -182,3 +182,31 @@ Do not assume that a successful Exchange 2003 AD lookup verifies Exchange
 5.5 Directory Service, which may use different LDAP versions and recipient
 attributes. The full GAL membership and distribution-list behavior still
 require local acceptance testing.
+
+## Recipient autocomplete: source badges and GAL-only mode
+
+The desktop compose To/Cc/Bcc autocomplete now identifies each suggestion
+as **GAL**, **Contacts** or **Recent**:
+
+- **GAL**: the address is present in the latest directory search result, even
+  when it also occurs in message history.
+- **Contacts**: saved in a personal address book, and not currently returned
+  by the directory query.
+- **Recent**: learned from mail sent or received, and not matched in either
+  preceding source.
+
+The **GAL only** checkbox beneath recipient boxes is **off by default**.
+When enabled, suggestions come exclusively from `address_book("directory")`
+and do not include stored Contacts or message history. The user can still
+manually enter any valid address, so it is *not* an outbound-domain policy.
+The toggle belongs to the compose message; it does not rewrite account
+settings or delete existing contacts.
+
+An external email domain does not establish that an address is absent from
+the organisation GAL: Active Directory can contain mail contacts and other
+permitted address domains. Only the actual directory search is authoritative
+for this source badge. No hardcoded domain allowlist is used.
+
+The first directory query starts once at least three characters are typed.
+While a query is still in progress, suggestions may temporarily be empty in
+GAL-only mode. The existing short-term directory cache still applies.
