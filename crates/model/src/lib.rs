@@ -188,6 +188,9 @@ pub struct LdapSettings {
     pub base_dn: String,
     pub bind_dn: Option<String>,
     pub schema: LdapSchema,
+    /// Explicit opt-in: unencrypted LDAP is permitted ONLY without Bind DN.
+    /// Never send credentials on this connection, even if supplied by mistake.
+    pub allow_insecure_anonymous: bool,
 }
 
 /// Longest User-Agent an account can name.
