@@ -8,13 +8,9 @@ impl Worker {
     pub(super) fn search_directory(&mut self, query: String) {
         let mut consent = false;
         let r = if let Some(settings) = self.acc.ldap.clone() {
-            // LDAP directories work alongside IMAP/SMTP accounts. Read the existing
-            // account password from its keychain only when a bind DN was supplied.
-            if settings.bind_dn.as_deref().is_some_and(|dn| !dn.trim().is_empty()) {
-                self.secret().and_then(|secret| crate::ldap::search_directory(&settings, Some(&secret), &query))
-            } else {
-                crate::ldap::search_directory(&settings, None, &query)
-            }
+            // Never reuse the mailbox password for a separate LDAP bind identity.
+            let ldap_secret = self.creds.as_ref().and_then(|c| c.get_secret(&self.acc, LDAP_SECRET));
+            crate::ldap::search_directory(&settings, ldap_secret.as_deref(), &query)
         } else {
             match &self.conn {
                 Some(Conn::Ews(c)) => c.search_directory(&query),
