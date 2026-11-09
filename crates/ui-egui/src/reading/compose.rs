@@ -763,16 +763,17 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                             if gal_only && let Some(query) = active_lookup.as_deref().filter(|q| !q.is_empty()) {
                                 ui.horizontal(|ui| {
                                     ui.add_space(LABEL_W - 8.0);
+                                    let errors = s.directory_errors(query);
                                     let message = if query.chars().count() < 3 {
-                                        "Enter at least 3 characters to search GAL"
+                                        "Enter at least 3 characters to search GAL".to_owned()
                                     } else if !query_ready || s.directory_pending(query) {
-                                        "Searching GAL…"
-                                    } else if !s.directory_errors(query).is_empty() {
-                                        "GAL search failed — directory is unavailable"
+                                        "Searching GAL…".to_owned()
+                                    } else if let Some(reason) = errors.first() {
+                                        format!("GAL query failed: {reason}")
                                     } else if suggestions.is_empty() {
-                                        "No GAL results for this spelling; try name or email alias"
+                                        "No GAL results for this spelling; try name or email alias".to_owned()
                                     } else {
-                                        ""
+                                        String::new()
                                     };
                                     if !message.is_empty() {
                                         ui.label(RichText::new(message).small().color(t.dim));
