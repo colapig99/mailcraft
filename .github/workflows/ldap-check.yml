@@ -12,7 +12,7 @@ jobs:
   ldap-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.0'
@@ -29,6 +29,7 @@ jobs:
         run: |
           cargo test --locked -p mailcraft-net ldap
           cargo test --locked -p mailcraft-engine directory
+          cargo test --locked -p mailcraft-ui-egui i18n::tests::every_interface_string_is_translated
 
   windows-ldap-check:
     runs-on: windows-latest
