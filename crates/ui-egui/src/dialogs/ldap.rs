@@ -88,7 +88,8 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
                 "baseDn": f.base_dn.trim(),
                 "password": if f.password.is_empty() { None } else { Some(f.password.as_str()) },
                 "bindDn": if f.bind_dn.trim().is_empty() { None } else { Some(f.bind_dn.trim()) },
-                "schema": if f.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" }
+                "schema": if f.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" },
+                "allowInsecureAnonymous": f.allow_insecure_anonymous
             })
         } else {
             json!({"account": f.account, "disable": true})
