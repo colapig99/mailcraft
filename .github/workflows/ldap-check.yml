@@ -48,6 +48,15 @@ jobs:
             (Resolve-Path "crates/net/src/ldap_windows.ps1").Path, [ref]$tokens, [ref]$parseErrors
           ) | Out-Null
           if ($parseErrors.Count -gt 0) { $parseErrors | Format-List | Out-String | Write-Error; exit 1 }
+      - name: Check helper process IPC and safe errors
+        shell: pwsh
+        run: |
+          $script = Get-Content crates/net/src/ldap_windows.ps1 -Raw
+          $invalid = '{"host":"","base_dn":"","filter":"(mail=*)","port":389,"limit":5,"schema":"ad"}'
+          $response = $invalid | & powershell.exe -NoProfile -NonInteractive -Command $script 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 2 -or $response -notmatch 'LDAP_HELPER_ERROR:HelperRuntime') {
+            throw "Bundled Windows LDAP helper JSON stdin/error protocol failed."
+          }
       - name: Check Windows native LDAP integration
         run: cargo check --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui
       - name: Windows LDAP clippy
