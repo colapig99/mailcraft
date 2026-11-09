@@ -91,6 +91,9 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         CommandSpec::new("account.dav", "Calendars and contacts", "File › Info › Account settings", set_dav).params(
             r#"{"account": string, "caldav"?: string (the calendar server's address: its own, the home, or one calendar; empty: found from the account's address), "carddav"?: string (the same for contacts), "username"?: string|null (its own sign-in; null: as the mail server), "password"?: string}"#,
         ),
+        CommandSpec::new("account.ldap", "LDAP enterprise directory", "File › Info › Account settings", set_ldap).params(
+            r#"{"account": string, "url"?: string (ldaps:// or ldap:// with STARTTLS), "baseDn"?: string, "bindDn"?: string|null (uses the account password from the keychain), "schema"?: "exchange55"|"ad", "disable"?: bool}"#,
+        ),
         CommandSpec::new("account.list", "Accounts", "File › Accounts", list_accounts),
         // Asks where MailCraft is published; File › About shows the answer (`Session::update`).
         CommandSpec::new("app.checkUpdates", "Check for updates", "File › About", |s, _| {
@@ -401,6 +404,47 @@ pub(super) fn set_dav(s: &mut Session, v: &Value) -> CmdResult {
     s.set_dav(id, &caldav, &carddav, username.as_deref(), p::str(v, "password"))
 }
 
+/// Configure a read-only LDAP GAL provider without storing an LDAP password.
+fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
+    let id = p::req_str(v, "account")?;
+    let mut config = s.account(id).map(|a| a.config.clone())
+        .ok_or_else(|| CmdError::Params(format!("no account `{id}`")))?;
+    if config.is_local() {
+        return Err(CmdError::Params("local accounts cannot search an LDAP server".into()));
+    }
+    if p::bool(v, "disable") == Some(true) {
+        config.ldap = None;
+    } else {
+        let mut ldap = config.ldap.clone().unwrap_or_default();
+        if let Some(url) = p::str(v, "url") { ldap.url = url.trim().to_string(); }
+        if let Some(dn) = p::str(v, "baseDn") { ldap.base_dn = dn.trim().to_string(); }
+        if let Some(dn) = v.get("bindDn") {
+            ldap.bind_dn = dn.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        }
+        if let Some(schema) = p::str(v, "schema") {
+            ldap.schema = match schema {
+                "exchange55" => mailcraft_model::LdapSchema::Exchange55,
+                "ad" => mailcraft_model::LdapSchema::ActiveDirectory,
+                _ => return Err(CmdError::Params("LDAP schema must be exchange55 or ad".into())),
+            };
+        }
+        if !ldap.url.starts_with("ldaps://") && !ldap.url.starts_with("ldap://") {
+            return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap:// (STARTTLS is mandatory)".into()));
+        }
+        if ldap.url.len() > 512 || ldap.url.chars().any(char::is_whitespace)
+            || ldap.base_dn.is_empty() || ldap.base_dn.len() > 1024
+            || ldap.bind_dn.as_ref().is_some_and(|s| s.len() > 1024)
+        {
+            return Err(CmdError::Params("invalid LDAP URL, Base DN, or Bind DN".into()));
+        }
+        config.ldap = Some(ldap);
+    }
+    let updated = s.update_account(config, None)?;
+    s.directory.answers.clear();
+    s.directory.rev = s.directory.rev.wrapping_add(1);
+    Ok(updated)
+}
+
 pub(super) fn list_accounts(s: &mut Session, _: &Value) -> CmdResult {
     Ok(json!(s
         .accounts
@@ -412,6 +456,7 @@ pub(super) fn list_accounts(s: &mut Session, _: &Value) -> CmdResult {
             "graph": a.config.graph,
             "pop": a.config.pop.as_ref().map(|p| format!("{}:{} ({})", p.host, p.port, p.security.code())),
             "ews": a.config.ews,
+            "ldap": a.config.ldap,
             "userAgent": a.config.user_agent,
             "imap": format!("{}:{} ({})", a.config.imap.host, a.config.imap.port, a.config.imap.security.code()),
             "smtp": format!("{}:{} ({})", a.config.smtp.host, a.config.smtp.port, a.config.smtp.security.code()),
