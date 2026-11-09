@@ -387,24 +387,42 @@ fn legacy_plaintext_ldap_requires_anonymous_bind() {
 #[test]
 fn windows_integrated_ldap_reuses_domain_login_without_bind_password() {
     let mut s = sample_session("ldap-negotiate");
-    let id = s.run("account.add", &json!({
-        "email": "legacy@contoso.example",
-        "password": "pw",
-        "imapHost": "mail.contoso.example",
-        "smtpHost": "mail.contoso.example"
-    })).unwrap()["account"].as_str().unwrap().to_string();
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
     s.take_jobs();
-    s.run("account.ldap", &json!({
-        "account": id, "url": "ldap://gc.contoso.example:389",
-        "baseDn": "DC=contoso,DC=example", "schema": "ad",
-        "windowsIntegrated": true
-    })).unwrap();
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id, "url": "ldap://gc.contoso.example:389",
+            "baseDn": "DC=contoso,DC=example", "schema": "ad",
+            "windowsIntegrated": true
+        }),
+    )
+    .unwrap();
     let ldap = s.account(&id).unwrap().config.ldap.as_ref().unwrap();
     assert!(ldap.windows_integrated);
     assert!(ldap.bind_dn.is_none());
     assert!(!ldap.allow_insecure_anonymous);
-    assert!(s.run("account.ldap", &json!({
-        "account": id, "bindDn": "cn=administrator,dc=contoso,dc=example"
-    })).is_err());
+    assert!(
+        s.run(
+            "account.ldap",
+            &json!({
+                "account": id, "bindDn": "cn=administrator,dc=contoso,dc=example"
+            })
+        )
+        .is_err()
+    );
     done(s);
 }
