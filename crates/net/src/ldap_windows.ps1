@@ -75,7 +75,23 @@ try {
         if ($null -ne $ldap) { $ldap.Dispose() }
     }
 } catch {
-    # Never echo server records, user-controlled query strings or credentials.
-    [Console]::Error.WriteLine("Windows integrated LDAP search failed; check domain sign-in, directory permissions and signing/sealing support.")
+    # Return only a fixed error category and LDAP result code, never raw
+    # exception text: it can contain server names or user-search input.
+    $kind = "Unexpected"
+    if ($_.Exception -is [System.DirectoryServices.Protocols.DirectoryOperationException]) {
+        $kind = "DirectoryOperation"
+        if ($_.Exception.Response) {
+            $code = [string]$_.Exception.Response.ResultCode
+            if ($code -match '^[A-Za-z0-9_]+
+) { $kind += ":" + $code }
+        }
+    } elseif ($_.Exception -is [System.DirectoryServices.Protocols.LdapException]) {
+        $kind = "LdapTransport"
+        $code = [int]$_.Exception.ErrorCode
+        if ($code -ge 0 -and $code -le 200) { $kind += ":" + $code }
+    } elseif ($_.Exception -is [System.Management.Automation.RuntimeException]) {
+        $kind = "HelperRuntime"
+    }
+    [Console]::Error.WriteLine("LDAP_HELPER_ERROR:" + $kind)
     exit 2
 }
