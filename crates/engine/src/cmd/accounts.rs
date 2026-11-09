@@ -430,6 +430,9 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         if let Some(allow) = p::bool(v, "allowInsecureAnonymous") {
             ldap.allow_insecure_anonymous = allow;
         }
+        if let Some(integrated) = p::bool(v, "windowsIntegrated") {
+            ldap.windows_integrated = integrated;
+        }
         if let Some(schema) = p::str(v, "schema") {
             ldap.schema = match schema {
                 "exchange55" => mailcraft_model::LdapSchema::Exchange55,
