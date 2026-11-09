@@ -426,3 +426,17 @@ fn windows_integrated_ldap_reuses_domain_login_without_bind_password() {
     );
     done(s);
 }
+
+
+#[test]
+fn local_recipient_suggestions_do_not_queue_directory_prefixes() {
+    let mut s = sample_session("recipient-debounce");
+    let _id = exchange(&mut s, None);
+    for query in ["ton", "tone", "toney"] {
+        let _ = s.suggest_local_contacts(query, 8);
+    }
+    assert!(asked(&mut s).is_empty(), "typing prefixes must not flood the LDAP server");
+    s.address_book("directory", "toney");
+    assert_eq!(asked(&mut s), ["toney"], "only the settled recipient query is sent");
+    done(s);
+}
