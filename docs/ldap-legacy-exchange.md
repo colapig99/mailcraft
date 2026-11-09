@@ -32,15 +32,20 @@ can be changed to 390 in coexistence installations. Its Base DN is normally
 not an Active Directory DC= form. Verify actual server, port and search
 base from your working Thunderbird configuration or directory administrator.
 
-**Transport security**: the client only permits `ldaps://` or `ldap://`
-with mandatory STARTTLS and certificate verification. Import the enterprise
-CA into the operating system trust store if needed. Never disable verification
-or expose an obsolete Exchange server to the public internet.
+**Transport security:** LDAPS or STARTTLS and certificate verification
+remain the default. A new explicit **legacy cleartext anonymous** option
+allows `ldap://` without STARTTLS only when **both Bind DN and password are
+absent**. LDAP requests, responses, names, and email addresses are readable on
+the network; use it only on an isolated LAN and do not expose the port publicly.
+A directory that requires authentication over unencrypted LDAP **cannot be
+used directly** in this mode. Use a separate tightly controlled legacy bridge
+and a dedicated low-privilege read-only account, never Domain Administrator.
+This is not a silent fallback from failed TLS.
 
 **Exchange 5.5 compatibility caveat:** The chosen LDAP library speaks LDAPv3
-and requires modern TLS. Some Exchange 5.5 sites cannot negotiate it, or only
-support LDAPv2. Such sites need an isolated, secured compatibility service
-run by administrators; this code intentionally does not downgrade.
+and can search anonymously over cleartext LDAP only after explicit opt-in.
+Some Exchange 5.5 sites use LDAPv2 or require credentialed binds without TLS;
+those sites need an isolated, secured compatibility service run by administrators.
 
 ### CLI alternative
 
@@ -99,7 +104,7 @@ then use an isolated read-only organizational test account.
 
 - Settings survive a restart without storing credentials in JSON.
 - The certificate chain and server name are checked.
-- LDAP bind works only after STARTTLS or LDAPS is established.
+- Authenticated LDAP bind works only after STARTTLS or LDAPS is established; plaintext LDAP is anonymous-only.
 - Searches in To, Cc, Bcc and Select Names return the same contacts.
 - Filter injection, invalid SMTP values, duplicate entries and 50-result
   truncation are handled.
@@ -121,3 +126,22 @@ LDAP directory host. This private address must not be hard-coded in source;
 use administrator-provided settings. A classic Windows NT PDC is not
 necessarily an AD LDAP service: verify the directory type, Root DSE, and
 STARTTLS support before choosing the AD schema.
+
+
+## Cleartext legacy configuration (anonymous only)
+
+```json
+{
+  "account": "a1",
+  "url": "ldap://directory.example.com:389",
+  "baseDn": "DC=example,DC=com",
+  "schema": "ad",
+  "bindDn": null,
+  "allowInsecureAnonymous": true
+}
+```
+
+The domain-controller endpoint from Thunderbird is separate from the Exchange
+mail host. If anonymous search returns LDAP result 50 (insufficient access),
+**do not** enter the administrator password into an unencrypted LDAP profile.
+Use a dedicated gateway and a least-privilege service account instead.
