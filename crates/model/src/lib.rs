@@ -158,10 +158,35 @@ pub struct AccountConfig {
     /// address on its own, or one that wants a password of its own (an app password).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dav: Option<DavSettings>,
+    /// Optional LDAP directory for Exchange 5.5 / 2003 GAL lookups (not mail transport).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ldap: Option<LdapSettings>,
     /// The User-Agent its Exchange (EWS) requests name instead of MailCraft's (issue #9), for a
     /// server that lets in only the clients it knows. Checked by [`user_agent`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
+}
+
+/// LDAP directories can have different names for SMTP recipients.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LdapSchema {
+    Exchange55,
+    #[default]
+    ActiveDirectory,
+}
+
+/// Read-only enterprise address book, separate from mail transport.
+/// Passwords are never stored here: if bind_dn is present, the mail account's
+/// keychain credential is used. LDAP must use certificate-verified TLS.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LdapSettings {
+    /// e.g. ldaps://gc.example.com:3269 or ldap://gc.example.com:3268 (STARTTLS).
+    pub url: String,
+    pub base_dn: String,
+    pub bind_dn: Option<String>,
+    pub schema: LdapSchema,
 }
 
 /// Longest User-Agent an account can name.
