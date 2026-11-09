@@ -1,0 +1,29 @@
+name: Legacy LDAP compile and tests
+
+on:
+  push:
+    branches: [feature/exchange-legacy-ldap]
+    paths:
+      - '.github/workflows/ldap-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ldap-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check net and engine
+        run: cargo check --locked -p mailcraft-net -p mailcraft-engine
+      - name: Run LDAP and directory unit tests
+        run: |
+          cargo test --locked -p mailcraft-net ldap
+          cargo test --locked -p mailcraft-engine directory
