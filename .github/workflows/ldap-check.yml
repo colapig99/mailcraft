@@ -3,8 +3,6 @@ name: Legacy LDAP compile and tests
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
-    paths:
-      - '.github/workflows/ldap-check.yml'
   workflow_dispatch:
 
 permissions:
