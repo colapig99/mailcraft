@@ -13,8 +13,8 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 if ($Port -lt 1 -or $Port -gt 65535 -or $MaxResults -lt 1 -or $MaxResults -gt 20) { throw "invalid port/result limit" }
 function New-Connection([bool]$integrated) {
-  $ident = New-Object System.DirectoryServices.Protocols.LdapDirectoryIdentifier($Server,$Port)
-  $c = New-Object System.DirectoryServices.Protocols.LdapConnection($ident)
+  $ident = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new($Server,$Port)
+  $c = [System.DirectoryServices.Protocols.LdapConnection]::new($ident)
   $c.Timeout = [TimeSpan]::FromSeconds(8)
   $c.SessionOptions.ProtocolVersion = 3
   if ($integrated) {
@@ -46,7 +46,7 @@ foreach ($mode in @("Anonymous", "WindowsIntegrated")) {
   try {
     $c = New-Connection ($mode -eq "WindowsIntegrated")
     $c.Bind()
-    $req = New-Object System.DirectoryServices.Protocols.SearchRequest($BaseDn,$filter,([System.DirectoryServices.Protocols.SearchScope]::Subtree),([string[]]@("displayName","cn","mail")))
+    $req = [System.DirectoryServices.Protocols.SearchRequest]::new($BaseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]@("displayName","cn","mail"))
     $req.SizeLimit = $MaxResults
     $req.TimeLimit = [TimeSpan]::FromSeconds(8)
     $response = $c.SendRequest($req)
