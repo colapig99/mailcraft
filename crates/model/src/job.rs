@@ -295,7 +295,7 @@ pub enum PgpSignature {
 impl Job {
     pub fn account(&self) -> &str {
         match self {
-            Job::Start { account, .. } | Job::SmtpPassword { account, .. } | Job::DavPassword { account, .. } | Job::LdapPassword { account, .. } => &account.id
+            Job::Start { account, .. } | Job::SmtpPassword { account, .. } | Job::DavPassword { account, .. } | Job::LdapPassword { account, .. } => &account.id,
             Job::FetchBody { key } => &key.account,
             Job::Remove { account }
             | Job::SyncAll { account }
