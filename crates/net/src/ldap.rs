@@ -164,10 +164,7 @@ mod tests {
         };
         // Must reject before any network I/O: no password on a cleartext wire.
         assert!(search_directory(&settings, Some("secret"), "Alice").is_err());
-        let secured_bind = LdapSettings {
-            bind_dn: Some("cn=reader,dc=example,dc=com".into()),
-            ..settings
-        };
+        let secured_bind = LdapSettings { bind_dn: Some("cn=reader,dc=example,dc=com".into()), ..settings };
         assert!(search_directory(&secured_bind, None, "Alice").is_err());
     }
     #[test]
