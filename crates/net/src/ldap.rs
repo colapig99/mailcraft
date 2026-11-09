@@ -36,7 +36,7 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     Some(match schema {
         LdapSchema::Exchange55 => format!("(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"),
         LdapSchema::ActiveDirectory => format!(
-            "(&(mail=*)(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
+            "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
         ),
     })
 }
@@ -105,7 +105,7 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
     }
     let attrs = match settings.schema {
         LdapSchema::Exchange55 => vec!["cn", "displayName", "mail", "rfc822Mailbox"],
-        LdapSchema::ActiveDirectory => vec!["cn", "displayName", "mail"],
+        LdapSchema::ActiveDirectory => vec!["cn", "displayName", "mail", "proxyAddresses"],
     };
     let reply = conn
         .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
@@ -124,7 +124,9 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
             LdapSchema::Exchange55 => &["rfc822Mailbox", "mail"],
             LdapSchema::ActiveDirectory => &["mail"],
         };
-        let Some(email) = first_attr(&entry, wanted) else { continue };
+        let Some(email) = first_attr(&entry, wanted).or_else(|| {
+            if settings.schema == LdapSchema::ActiveDirectory { primary_proxy_address(&entry) } else { None }
+        }) else { continue };
         if !mailcraft_model::addr::is_valid_email(&email) {
             continue;
         }
@@ -146,6 +148,14 @@ fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+/// The primary SMTP proxy uses uppercase SMTP:; lowercase smtp: aliases
+/// are fallback candidates when an AD mail attribute is absent.
+fn primary_proxy_address(entry: &SearchEntry) -> Option<String> {
+    let (_, values) = entry.attrs.iter().find(|(key, _)| key.eq_ignore_ascii_case("proxyAddresses"))?;
+    values.iter().find_map(|v| v.strip_prefix("SMTP:").map(str::to_string))
+        .or_else(|| values.iter().find_map(|v| v.strip_prefix("smtp:").map(str::to_string)))
 }
 
 /// Search through Windows' built-in LDAP stack with SSPI Negotiate and
