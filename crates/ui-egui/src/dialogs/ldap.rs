@@ -54,6 +54,12 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
         ui.add(egui::TextEdit::singleline(&mut f.url).hint_text("ldaps://gc.example.com:3269").desired_width(width));
         ui.label("Base DN");
         ui.add(egui::TextEdit::singleline(&mut f.base_dn).hint_text("DC=company,DC=local or o=Company").desired_width(width));
+        ui.checkbox(&mut f.allow_insecure_anonymous, "Legacy mode: unencrypted anonymous LDAP (no password)");
+        if f.allow_insecure_anonymous {
+            ui.label(RichText::new("WARNING: names and search terms are transmitted without encryption. Only use on an isolated trusted network. No Bind DN or password is allowed.").color(t.warn).small());
+            f.bind_dn.clear();
+            f.password.clear();
+        }
         ui.label("Bind DN (optional; own LDAP password, never mailbox password)");
         ui.add(egui::TextEdit::singleline(&mut f.bind_dn).hint_text("user@company.local or directory DN").desired_width(width));
         if !f.bind_dn.trim().is_empty() {
