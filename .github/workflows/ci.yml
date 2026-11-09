@@ -5,7 +5,7 @@ name: ci
 # suite's shared gate workflow in craft-common-actions.
 on:
   push:
-    branches: [main, feature/exchange-legacy-ldap]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
