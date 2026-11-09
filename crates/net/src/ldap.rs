@@ -114,10 +114,10 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
 
 fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
     for wanted in names {
-        if let Some((_, values)) = entry.attrs.iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted)) {
-            if let Some(s) = values.iter().find(|s| !s.trim().is_empty()) {
-                return Some(s.trim().to_owned());
-            }
+        if let Some((_, values)) = entry.attrs.iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted))
+            && let Some(s) = values.iter().find(|s| !s.trim().is_empty())
+        {
+            return Some(s.trim().to_owned());
         }
     }
     None
