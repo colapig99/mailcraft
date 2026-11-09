@@ -165,6 +165,7 @@ impl Worker {
             Job::Start { .. }
             | Job::SmtpPassword { .. }
             | Job::DavPassword { .. }
+            | Job::LdapPassword { .. }
             | Job::Remove { .. }
             | Job::WorkOffline { .. }
             | Job::SetSync { .. } => {}
