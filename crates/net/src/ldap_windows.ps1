@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 # Windows PowerShell 5.1 may inherit an OEM console code page. The Rust caller
 # expects UTF-8 JSON: Chinese/other non-ASCII GAL names must round-trip intact.
 # Set both directions before reading JSON stdin or writing directory results.
-$utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+$utf8 = [System.Text.UTF8Encoding]::new($false, $true)
 [Console]::InputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
 Add-Type -AssemblyName System.DirectoryServices.Protocols
