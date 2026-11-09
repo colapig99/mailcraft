@@ -2,6 +2,12 @@
 # A JSON request arrives via standard input; no user string is ever interpolated
 # into executable PowerShell. Never print LDAP names to stderr or diagnostic logs.
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1 may inherit an OEM console code page. The Rust caller
+# expects UTF-8 JSON: Chinese/other non-ASCII GAL names must round-trip intact.
+# Set both directions before reading JSON stdin or writing directory results.
+$utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 try {
     $p = [Console]::In.ReadToEnd() | ConvertFrom-Json
