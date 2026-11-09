@@ -1,4 +1,6 @@
-//! LDAPv3 GAL lookup for legacy Exchange. TLS is mandatory.
+//! LDAPv3 GAL lookup for legacy Exchange. Verified TLS is the default.
+//! A deliberately enabled cleartext mode is anonymous-only: no credentials,
+//! no LDAP simple bind, and no TLS downgrade on connection errors.
 
 use crate::{NetError, Result};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry, SearchOptions};
