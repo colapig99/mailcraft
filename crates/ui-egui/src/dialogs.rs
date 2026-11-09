@@ -14,6 +14,7 @@ mod accounts;
 mod categories;
 mod closing;
 mod dav;
+mod ldap;
 mod folders;
 mod importing;
 mod mailbox;
@@ -25,6 +26,7 @@ mod writing;
 
 pub use accounts::*;
 pub use dav::DavForm;
+pub use ldap::LdapForm;
 pub(crate) use importing::skip_line;
 pub use mailbox::*;
 pub use organize::*;
@@ -146,6 +148,8 @@ pub enum Dialog {
     },
     /// Where an account's calendars and contacts are, given by hand (issue #7).
     Dav(dav::DavForm),
+    /// An IMAP account's read-only Exchange LDAP GAL.
+    Ldap(ldap::LdapForm),
     /// The password of a certificate file being imported (S/MIME): from `path`, or `data` as the
     /// browser's picker gives it; neither, the one the browser keeps, unlocked.
     Certificate {
@@ -446,6 +450,7 @@ impl Dialog {
             Dialog::Contact(f) => f.error = Some(e),
             Dialog::Vacation(f) => f.error = Some(e),
             Dialog::Dav(f) => f.error = Some(e),
+            Dialog::Ldap(f) => f.error = Some(e),
             Dialog::OpenSharedCalendar { error, .. } | Dialog::SubscribeCalendar { error, .. } | Dialog::AddSharedMailbox { error, .. } => {
                 *error = Some(e)
             }
@@ -612,6 +617,7 @@ fn body(ui: &mut Ui, d: &mut Dialog, s: &Session, pics: &mut crate::reading::Pic
         | Dialog::AddSharedMailbox { .. } => accounts::draw(ui, d, s, t, acts),
         Dialog::Signature(..) | Dialog::Vacation(..) => mailbox::draw(ui, d, s, t, acts),
         Dialog::Dav(f) => dav::draw(ui, f, t, acts),
+        Dialog::Ldap(f) => ldap::draw(ui, f, t, acts),
         Dialog::ConfirmDelete { .. }
         | Dialog::MoveTo { .. }
         | Dialog::FolderName { .. }
