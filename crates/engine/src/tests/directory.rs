@@ -266,6 +266,7 @@ fn imap_account_can_search_exchange_legacy_ldap_directory() {
             "url": "ldaps://gc.contoso.example:3269",
             "baseDn": "DC=contoso,DC=example",
             "bindDn": "legacy@contoso.example",
+            "password": "ldap-test-secret",
             "schema": "ad"
         }),
     )
@@ -279,6 +280,7 @@ fn imap_account_can_search_exchange_legacy_ldap_directory() {
     assert_eq!(s.suggest_contacts("alice", 8).len(), 1);
     let saved = std::fs::read_to_string(s.store.as_ref().unwrap().root().join("accounts.json")).unwrap();
     assert!(saved.contains("gc.contoso.example"));
+    assert!(!saved.contains("ldap-test-secret"));
     assert!(!saved.contains("\"password\": \"pw\""));
     s.run("account.ldap", &json!({"account": id, "disable": true})).unwrap();
     assert!(!s.directory_accounts().contains(&id));
