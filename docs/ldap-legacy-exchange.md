@@ -145,3 +145,40 @@ The domain-controller endpoint from Thunderbird is separate from the Exchange
 mail host. If anonymous search returns LDAP result 50 (insufficient access),
 **do not** enter the administrator password into an unencrypted LDAP profile.
 Use a dedicated gateway and a least-privilege service account instead.
+
+## Windows Integrated LDAP — recommended for domain-joined desktops
+
+The site verified that anonymous search is rejected but a normal employee
+Windows session succeeds using `Negotiate`, LDAP Signing and LDAP Sealing.
+This is preferred over an unencrypted administrator Simple Bind.
+
+For an Exchange 2003 Active Directory GAL, use a **directory controller**
+rather than the Exchange mail host. Example (replace placeholders):
+
+```json
+{
+  "account": "a1",
+  "url": "ldap://directory.example.com:389",
+  "baseDn": "DC=example,DC=com",
+  "schema": "ad",
+  "windowsIntegrated": true,
+  "allowInsecureAnonymous": false,
+  "bindDn": null
+}
+```
+
+Desktop settings: select **Windows Integrated (current domain user)**.
+No LDAP password is entered or stored. The native Windows LDAP layer uses the
+logged-in domain identity and requests Negotiate with signing and sealing.
+MailCraft uses a bundled, fixed PowerShell helper with all inputs sent in JSON
+over stdin; user input is never interpreted as PowerShell source.
+
+The standalone PowerShell probe `scripts/Test-LegacyGal.ps1` has been tested
+successfully on a domain-joined client; the new MailCraft Windows connector
+still needs a **real end-to-end smoke test** on that client. Linux/macOS
+clients cannot use the Windows Integrated mode.
+
+Do not assume that a successful Exchange 2003 AD lookup verifies Exchange
+5.5 Directory Service, which may use different LDAP versions and recipient
+attributes. The full GAL membership and distribution-list behavior still
+require local acceptance testing.
