@@ -1,4 +1,5 @@
 name: Format GAL search fixes
+# Reformat debounce and missing GAL diagnostics
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
