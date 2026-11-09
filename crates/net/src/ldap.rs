@@ -148,7 +148,6 @@ fn first_attr(entry: &SearchEntry, names: &[&str]) -> Option<String> {
     None
 }
 
-
 /// Search through Windows' built-in LDAP stack with SSPI Negotiate and
 /// directory signing/sealing. The helper script is a fixed build-time resource;
 /// user input travels solely as JSON through stdin (never shell interpolation).
@@ -163,16 +162,15 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
         email: String,
     }
 
-    let filter = recipient_filter(settings.schema, query)
-        .ok_or_else(|| NetError::Refused("LDAP query must contain 1–128 characters".into()))?;
-    let host_port = settings.url.strip_prefix("ldap://")
-        .ok_or_else(|| NetError::Refused("Windows Integrated LDAP requires ldap://".into()))?;
+    let filter = recipient_filter(settings.schema, query).ok_or_else(|| NetError::Refused("LDAP query must contain 1–128 characters".into()))?;
+    let host_port = settings.url.strip_prefix("ldap://").ok_or_else(|| NetError::Refused("Windows Integrated LDAP requires ldap://".into()))?;
     if host_port.is_empty() || host_port.chars().any(|c| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '@')) {
         return Err(NetError::Refused("LDAP URL must contain only a host and optional port".into()));
     }
     let (host, port) = match host_port.rsplit_once(':') {
-        Some((host, digits)) if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) =>
-            (host, digits.parse::<u16>().map_err(|_| NetError::Refused("invalid LDAP port".into()))?),
+        Some((host, digits)) if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) => {
+            (host, digits.parse::<u16>().map_err(|_| NetError::Refused("invalid LDAP port".into()))?)
+        }
         Some(_) => return Err(NetError::Refused("Windows Integrated LDAP requires a host or host:port".into())),
         None => (host_port, 389),
     };
@@ -182,28 +180,31 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     let body = serde_json::json!({
         "host": host, "port": port, "base_dn": settings.base_dn,
         "filter": filter, "limit": MAX_RESULTS
-    }).to_string();
+    })
+    .to_string();
 
     let mut child = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
-        .spawn().map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
     let Some(mut input) = child.stdin.take() else {
         return Err(NetError::Protocol("cannot open LDAP helper input".into()));
     };
-    input.write_all(body.as_bytes())
-        .map_err(|e| NetError::Protocol(format!("cannot submit LDAP search: {e}")))?;
+    input.write_all(body.as_bytes()).map_err(|e| NetError::Protocol(format!("cannot submit LDAP search: {e}")))?;
     drop(input);
-    let output = child.wait_with_output()
-        .map_err(|e| NetError::Protocol(format!("LDAP helper failed: {e}")))?;
+    let output = child.wait_with_output().map_err(|e| NetError::Protocol(format!("LDAP helper failed: {e}")))?;
     if !output.status.success() {
         return Err(NetError::Auth("Windows Integrated LDAP query rejected; verify domain credentials, signing/sealing and permissions".into()));
     }
-    let people: Vec<Person> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
+    let people: Vec<Person> = serde_json::from_slice(&output.stdout).map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
     let mut results = Vec::new();
     for p in people.into_iter().take(MAX_RESULTS) {
-        if !mailcraft_model::addr::is_valid_email(&p.email) { continue; }
+        if !mailcraft_model::addr::is_valid_email(&p.email) {
+            continue;
+        }
         if !results.iter().any(|(_, email): &(String, String)| email.eq_ignore_ascii_case(&p.email)) {
             results.push((p.name, p.email));
         }

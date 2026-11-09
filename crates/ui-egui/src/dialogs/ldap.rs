@@ -62,7 +62,9 @@ pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Act
                 f.allow_insecure_anonymous = false;
                 f.bind_dn.clear();
                 f.password.clear();
-                ui.label(RichText::new("No password required. Use ldap://server:389; your current Windows domain identity is used.").color(t.dim).small());
+                ui.label(
+                    RichText::new("No password required. Use ldap://server:389; your current Windows domain identity is used.").color(t.dim).small(),
+                );
             }
         }
         if !f.windows_integrated {
