@@ -67,7 +67,7 @@ fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
         return Err(NetError::Refused("LDAP Base DN is required".into()));
     }
     let opts = LdapConnSettings::new().set_conn_timeout(Duration::from_secs(10)).set_starttls(starttls);
-    let mut conn = LdapConn::with_settings(opts, url).map_err(|e| NetError::Tls(format!("secure LDAP connection failed: {e}")))?;
+    let mut conn = LdapConn::with_settings(opts, url).map_err(|e| NetError::Protocol(format!("LDAP connection failed: {e}")))?;
     conn.with_timeout(Duration::from_secs(12));
     Ok(conn)
 }
