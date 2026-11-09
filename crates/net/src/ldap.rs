@@ -75,11 +75,16 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
         LdapSchema::Exchange55 => vec!["cn", "displayName", "mail", "rfc822Mailbox"],
         LdapSchema::ActiveDirectory => vec!["cn", "displayName", "mail"],
     };
-    let (entries, _) = conn
+    let reply = conn
         .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
         .search(&settings.base_dn, Scope::Subtree, &filter, attrs)
-        .map_err(|e| NetError::Protocol(format!("LDAP search failed: {e}")))?
-        .success().map_err(|e| NetError::Protocol(format!("LDAP search rejected: {e}")))?;
+        .map_err(|e| NetError::Protocol(format!("LDAP search failed: {e}")))?;
+    // LDAP result 4 (sizeLimitExceeded) can still contain the first 50 valid
+    // entries; show that bounded prefix instead of incorrectly saying no one exists.
+    if reply.1.rc != 0 && !(reply.1.rc == 4 && !reply.0.is_empty()) {
+        return Err(NetError::Protocol(format!("LDAP search rejected: {}", reply.1)));
+    }
+    let entries = reply.0;
     let mut people = Vec::new();
     for raw in entries.into_iter().take(MAX_RESULTS) {
         let entry = SearchEntry::construct(raw);
