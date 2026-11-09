@@ -359,7 +359,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         .collect();
     // Keep the mode per compose message and window; a different message should not
     // inherit a potentially restrictive GAL-only setting. Default is mixed.
-    let gal_mode_id = ui.ctx().id().with(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
+    let gal_mode_id = egui::Id::new(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
     let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
     let has_directory = !s.directory_accounts().is_empty();
 
