@@ -1,0 +1,35 @@
+name: Legacy Exchange Windows test build
+on:
+  push:
+    branches: [feature/exchange-legacy-ldap]
+    paths: ['.github/workflows/ldap-windows-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-test-app:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Build unsigned Windows POC executable
+        run: cargo build --locked --release -p mailcraft
+      - name: Collect test binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ldap-poc | Out-Null
+          Copy-Item target/release/mailcraft.exe ldap-poc/mailcraft.exe
+          @"
+          INTERNAL TEST ONLY. Unsigned experimental MailCraft fork.
+          LDAP Windows Integrated uses your Windows domain logon.
+          Never test first with a domain administrator account.
+          Do not distribute as an official MailCraft release.
+          "@ | Set-Content ldap-poc/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mailcraft-legacy-ldap-windows-poc
+          path: ldap-poc/
+          retention-days: 7
