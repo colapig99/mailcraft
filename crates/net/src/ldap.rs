@@ -47,7 +47,7 @@ fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
         else { return Err(NetError::Refused("LDAP URL must use ldaps:// or ldap:// (with STARTTLS)".into())); };
     // Endpoint only: refuse credentials embedded in URLs and LDAP URL query/filter parts.
     let authority = url.strip_prefix("ldaps://").or_else(|| url.strip_prefix("ldap://")).unwrap_or("");
-    if authority.is_empty() || authority.contains(['/', '?', '#', '@']) || authority.chars().any(char::is_whitespace) {
+    if authority.is_empty() || authority.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@')) || authority.chars().any(char::is_whitespace) {
         return Err(NetError::Refused("LDAP URL must contain only a server and optional port".into()));
     }
     if settings.base_dn.trim().is_empty() {
