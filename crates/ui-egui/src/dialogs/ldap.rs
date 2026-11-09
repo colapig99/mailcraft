@@ -39,7 +39,7 @@ impl LdapForm {
 
 pub(super) fn draw(ui: &mut Ui, f: &mut LdapForm, t: &Tokens, acts: &mut Vec<Action>) -> bool {
     ui.set_width(490.0);
-    title(ui, t, "LDAP enterprise address book");
+    title(ui, t, "Address book");
     ui.label(RichText::new(
         "Search your Exchange 5.5 Directory or Exchange 2003 Active Directory from recipient fields. LDAP is read-only. Default TLS, or Windows domain sign-in with LDAP sealing."
     ).color(t.dim).small());
