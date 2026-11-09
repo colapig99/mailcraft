@@ -329,3 +329,36 @@ fn ldap_command_validates_schema_and_tls_settings() {
     assert_eq!(s.account(&id).unwrap().config.ldap.as_ref().unwrap().schema, mailcraft_model::LdapSchema::Exchange55);
     done(s);
 }
+
+#[test]
+fn legacy_plaintext_ldap_requires_anonymous_bind() {
+    let mut s = sample_session("ldap-plain");
+    let id = s.run("account.add", &json!({
+        "email": "legacy@contoso.example",
+        "password": "pw",
+        "imapHost": "mail.contoso.example",
+        "smtpHost": "mail.contoso.example"
+    })).unwrap()["account"].as_str().unwrap().to_string();
+    s.take_jobs();
+    let anonymous = json!({
+        "account": id,
+        "url": "ldap://directory.contoso.example:389",
+        "baseDn": "DC=contoso,DC=example",
+        "schema": "ad",
+        "allowInsecureAnonymous": true
+    });
+    s.run("account.ldap", &anonymous).unwrap();
+    let settings = s.account(&id).unwrap().config.ldap.as_ref().unwrap();
+    assert!(settings.allow_insecure_anonymous);
+    assert!(settings.bind_dn.is_none());
+    assert!(s.run("account.ldap", &json!({
+        "account": id,
+        "bindDn": "cn=administrator,cn=Users,dc=contoso,dc=example",
+        "password": "bad-idea"
+    })).is_err());
+    assert!(s.run("account.ldap", &json!({
+        "account": id,
+        "bindDn": "cn=reader,dc=contoso,dc=example"
+    })).is_err());
+    done(s);
+}
