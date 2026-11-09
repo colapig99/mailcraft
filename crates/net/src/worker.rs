@@ -310,6 +310,15 @@ impl Pool {
             }
             Job::Start { account, password } => self.start(account, password),
             // An empty one: the calendar server signs in as the mail server again.
+            Job::LdapPassword { account, password } if password.0.is_empty() => self.creds.delete_secret(&account, LDAP_SECRET),
+            Job::LdapPassword { account, password } => {
+                if let Err(e) = self.creds.set_secret(&account, LDAP_SECRET, &password.0) {
+                    self.sink.emit(Event::Notice {
+                        account: account.id.clone(),
+                        message: format!("LDAP password could not be saved in the keychain: {e}"),
+                    });
+                }
+            }
             Job::DavPassword { account, password } if password.0.is_empty() => self.creds.delete_secret(&account, DAV_SECRET),
             Job::DavPassword { account, password } => {
                 if let Err(e) = self.creds.set_secret(&account, DAV_SECRET, &password.0) {
@@ -340,6 +349,7 @@ impl Pool {
                     smime::forget_all(self.creds.as_ref(), &c);
                     pgp::forget_all(self.creds.as_ref(), &c);
                     self.creds.delete_secret(&c, DAV_SECRET);
+                    self.creds.delete_secret(&c, LDAP_SECRET);
                     self.creds.delete_secret(&c, DIRECTORY_SECRET);
                 }
             }
@@ -565,6 +575,8 @@ mod smime;
 
 /// The keychain entry of an account's calendar and contacts server's own password.
 pub(crate) const DAV_SECRET: &str = "dav";
+/// LDAP directory bind password, separate from mailbox and EWS/Graph credentials.
+pub(crate) const LDAP_SECRET: &str = "ldap";
 /// Where an Exchange Online account's directory sign-in (its refresh token) is kept (issue #9).
 pub(crate) const DIRECTORY_SECRET: &str = "directory";
 mod sync;
