@@ -207,7 +207,7 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     cmd.creation_flags(CREATE_NO_WINDOW);
     let mut child = cmd.spawn().map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
     let Some(mut input) = child.stdin.take() else {
@@ -227,6 +227,11 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
         let read = stdout.take(1_048_576).read_to_end(&mut output);
         (read, output)
     });
+    let stderr_reader = child.stderr.take().map(|stderr| std::thread::spawn(move || {
+        let mut details = Vec::new();
+        let _ = stderr.take(4096).read_to_end(&mut details);
+        details
+    }));
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     let status = loop {
         match child.try_wait() {
@@ -240,12 +245,23 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
         let _ = child.wait();
     }
     let output = reader.join().map_err(|_| NetError::Protocol("Windows LDAP output reader failed".into()))?;
+    let diagnostics = stderr_reader.and_then(|thread| thread.join().ok()).unwrap_or_default();
     if status.is_none() {
         return Err(NetError::Protocol("Windows LDAP query timed out after 20 seconds".into()));
     }
     output.0.map_err(|e| NetError::Protocol(format!("cannot read LDAP results: {e}")))?;
     if !status.is_some_and(|s| s.success()) {
-        return Err(NetError::Auth("Windows Integrated LDAP query rejected; verify domain credentials, signing/sealing and permissions".into()));
+        // Only accept a category emitted by our fixed helper; never echo
+        // arbitrary PowerShell stderr (potentially includes directory data).
+        let reason = std::str::from_utf8(&diagnostics)
+            .ok()
+            .and_then(|err| err.lines().find_map(|line| line.trim().strip_prefix("LDAP_HELPER_ERROR:")))
+            .filter(|category| !category.is_empty() && category.len() <= 64
+                && category.bytes().all(|c| c.is_ascii_alphanumeric() || c == b':' || c == b'_'))
+            .unwrap_or("Unknown");
+        return Err(NetError::Auth(format!(
+            "Windows Integrated LDAP helper failed ({reason}); check the directory settings and Windows domain login"
+        )));
     }
     let people: Vec<Person> = serde_json::from_slice(&output.1).map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
     let mut results = Vec::new();
