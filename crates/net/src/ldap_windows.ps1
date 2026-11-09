@@ -32,7 +32,16 @@ try {
         )
         $req.SizeLimit = $limit
         $req.TimeLimit = [TimeSpan]::FromSeconds(8)
-        $response = $ldap.SendRequest($req)
+        $response = $null
+        try {
+            $response = $ldap.SendRequest($req)
+        } catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
+            # Retain the bounded result prefix when the LDAP server imposes a limit.
+            if ($_.Exception.Response -and $_.Exception.Response.ResultCode -eq [System.DirectoryServices.Protocols.ResultCode]::SizeLimitExceeded) {
+                $response = $_.Exception.Response
+            } else { throw }
+        }
+        if ($null -eq $response) { throw "LDAP search returned no response" }
         $people = @()
         foreach ($entry in $response.Entries) {
             $name = ""
@@ -43,7 +52,8 @@ try {
                 }
             }
             $email = ""
-            foreach ($key in @("mail","rfc822Mailbox")) {
+            $mailAttributes = if ([string]$p.schema -eq "exchange55") { @("rfc822Mailbox","mail") } else { @("mail") }
+            foreach ($key in $mailAttributes) {
                 if ($entry.Attributes.Contains($key)) {
                     $vals = $entry.Attributes[$key].GetValues([string])
                     if ($vals.Count -gt 0 -and $vals[0]) { $email = [string]$vals[0]; break }
