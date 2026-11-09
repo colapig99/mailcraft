@@ -412,11 +412,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                 let present = text.to_lowercase();
                 let directory = if query_ready { s.address_book("directory", &token) } else { Vec::new() };
                 let saved = if gal_only { Vec::new() } else { s.address_book("people", &token) };
-                let mut candidates: Vec<Contact> = if gal_only {
-                    Vec::new()
-                } else {
-                    s.suggest_local_contacts(&token, 8)
-                };
+                let mut candidates: Vec<Contact> = if gal_only { Vec::new() } else { s.suggest_local_contacts(&token, 8) };
                 for address in &directory {
                     if let Some(existing) = candidates.iter_mut().find(|c| c.address.email.eq_ignore_ascii_case(&address.email)) {
                         if !address.name.is_empty() {
@@ -439,8 +435,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                 });
                 let candidates: Vec<Contact> =
                     candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
-                let pending = (has_directory && !query_ready && token.chars().count() >= 3)
-                    || s.directory_pending(&token);
+                let pending = (has_directory && !query_ready && token.chars().count() >= 3) || s.directory_pending(&token);
                 let sources = candidates
                     .iter()
                     .map(|c| {

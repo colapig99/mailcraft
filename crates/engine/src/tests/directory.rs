@@ -427,7 +427,6 @@ fn windows_integrated_ldap_reuses_domain_login_without_bind_password() {
     done(s);
 }
 
-
 #[test]
 fn local_recipient_suggestions_do_not_queue_directory_prefixes() {
     let mut s = sample_session("recipient-debounce");
