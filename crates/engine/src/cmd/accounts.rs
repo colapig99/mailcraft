@@ -427,6 +427,9 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         if let Some(dn) = v.get("bindDn") {
             ldap.bind_dn = dn.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
         }
+        if let Some(allow) = p::bool(v, "allowInsecureAnonymous") {
+            ldap.allow_insecure_anonymous = allow;
+        }
         if let Some(schema) = p::str(v, "schema") {
             ldap.schema = match schema {
                 "exchange55" => mailcraft_model::LdapSchema::Exchange55,
