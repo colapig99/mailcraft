@@ -203,7 +203,7 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     drop(input);
     // Read concurrently while waiting: a full stdout pipe must never block the
     // helper and leave an invisible PowerShell process running indefinitely.
-    let Some(mut stdout) = child.stdout.take() else {
+    let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
         return Err(NetError::Protocol("cannot read Windows LDAP helper output".into()));
