@@ -86,8 +86,8 @@ cargo test -p mailcraft-engine directory
 cargo xtask ci
 ```
 
-Commit the regenerated `Cargo.lock` before release. Building with
-`--locked` will fail until the lockfile includes the new ldap3 dependency.
+The branch preparation workflow regenerates `Cargo.lock` and applies rustfmt;
+verify the changes are committed before using `--locked` in a production build.
 
 Do not use a production Exchange 5.5/2003 server as the initial test target.
 Start with a disposable LDAPv3/LDAPS directory containing synthetic people;
