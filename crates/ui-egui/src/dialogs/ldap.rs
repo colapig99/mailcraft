@@ -13,6 +13,7 @@ pub struct LdapForm {
     pub password: String,
     pub saved_bind_dn: String,
     pub schema: LdapSchema,
+    pub allow_insecure_anonymous: bool,
     pub error: Option<String>,
 }
 
