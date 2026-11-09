@@ -267,14 +267,11 @@ pub(super) fn recipient_field(
                     if on || resp.hovered() {
                         ui.painter().rect_filled(row, 4.0, if on { t.accent_soft } else { t.hover_row });
                     }
-                    let clip = ui.painter().with_clip_rect(egui::Rect::from_min_max(
-                        row.min + vec2(8.0, 0.0), row.max - vec2(76.0, 0.0),
-                    ));
+                    let clip = ui.painter().with_clip_rect(egui::Rect::from_min_max(row.min + vec2(8.0, 0.0), row.max - vec2(76.0, 0.0)));
                     // A source is not a domain-name heuristic: it comes from
                     // the real Directory, saved Contacts, or message-history set.
                     if let Some(source) = sources.get(i) {
-                        ui.painter().text(row.right_center() - vec2(8.0, 0.0),
-                            egui::Align2::RIGHT_CENTER, *source, theme::regular(10.5), t.faint);
+                        ui.painter().text(row.right_center() - vec2(8.0, 0.0), egui::Align2::RIGHT_CENTER, *source, theme::regular(10.5), t.faint);
                     }
                     let mut x = row.left() + 10.0;
                     if !c.address.name.is_empty() {
@@ -384,11 +381,8 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                 } else {
                     s.suggest_contacts(&token, 8)
                 };
-                let candidates: Vec<Contact> = candidates
-                    .into_iter()
-                    .filter(|c| !present.contains(&c.address.email.to_lowercase()))
-                    .take(6)
-                    .collect();
+                let candidates: Vec<Contact> =
+                    candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
                 let sources = candidates
                     .iter()
                     .map(|c| {
@@ -695,9 +689,13 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                             ui.horizontal(|ui| {
                                 ui.add_space(LABEL_W - 8.0);
                                 let mut enabled = gal_only;
-                                if ui.checkbox(&mut enabled, "GAL only").on_hover_text(
-                                    "Suggest only addresses returned by the company directory. Other addresses may still be typed manually."
-                                ).changed() {
+                                if ui
+                                    .checkbox(&mut enabled, "GAL only")
+                                    .on_hover_text(
+                                        "Suggest only addresses returned by the company directory. Other addresses may still be typed manually.",
+                                    )
+                                    .changed()
+                                {
                                     ui.ctx().data_mut(|d| d.insert_temp(gal_mode_id, enabled));
                                     st.suggest_index = 0;
                                     st.suggest_dismissed = None;
