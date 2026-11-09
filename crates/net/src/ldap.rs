@@ -183,18 +183,38 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     })
     .to_string();
 
-    let mut child = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
+    use std::os::windows::process::CommandExt;
+
+    // Windows creates a console window for a console child of a GUI app unless
+    // explicitly told not to. That was causing a visible PowerShell popup on
+    // every GAL autocomplete request.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
+        .stderr(Stdio::null());
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let mut child = cmd.spawn().map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
     let Some(mut input) = child.stdin.take() else {
         return Err(NetError::Protocol("cannot open LDAP helper input".into()));
     };
     input.write_all(body.as_bytes()).map_err(|e| NetError::Protocol(format!("cannot submit LDAP search: {e}")))?;
     drop(input);
+    // Never leave a hung helper (or a hidden console process) running forever.
+    // Poll with a deadline; bounded LDAP results are small enough for pipe buffering.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if child.try_wait().map_err(|e| NetError::Protocol(format!("LDAP helper wait failed: {e}")))?.is_some() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(NetError::Protocol("Windows LDAP query timed out after 20 seconds".into()));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let output = child.wait_with_output().map_err(|e| NetError::Protocol(format!("LDAP helper failed: {e}")))?;
     if !output.status.success() {
         return Err(NetError::Auth("Windows Integrated LDAP query rejected; verify domain credentials, signing/sealing and permissions".into()));
