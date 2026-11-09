@@ -92,7 +92,7 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             r#"{"account": string, "caldav"?: string (the calendar server's address: its own, the home, or one calendar; empty: found from the account's address), "carddav"?: string (the same for contacts), "username"?: string|null (its own sign-in; null: as the mail server), "password"?: string}"#,
         ),
         CommandSpec::new("account.ldap", "LDAP enterprise directory", "File › Info › Account settings", set_ldap).params(
-            r#"{"account": string, "url"?: string (ldaps:// or ldap:// with STARTTLS), "baseDn"?: string, "bindDn"?: string|null (uses the account password from the keychain), "schema"?: "exchange55"|"ad", "disable"?: bool}"#,
+            r#"{"account": string, "url"?: string (ldaps:// or ldap:// with STARTTLS), "baseDn"?: string, "bindDn"?: string|null (uses the account password from the keychain), "schema"?: "exchange55"|"ad", "password"?: string (separate LDAP secret), "disable"?: bool}"#,
         ),
         CommandSpec::new("account.list", "Accounts", "File › Accounts", list_accounts),
         // Asks where MailCraft is published; File › About shows the answer (`Session::update`).
@@ -412,7 +412,9 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
     if config.is_local() {
         return Err(CmdError::Params("local accounts cannot search an LDAP server".into()));
     }
-    if p::bool(v, "disable") == Some(true) {
+    let previous_bind = config.ldap.as_ref().and_then(|l| l.bind_dn.clone());
+    let mut delete_password = p::bool(v, "disable") == Some(true);
+    if delete_password {
         config.ldap = None;
     } else {
         let mut ldap = config.ldap.clone().unwrap_or_default();
@@ -446,9 +448,26 @@ fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
         {
             return Err(CmdError::Params("invalid LDAP URL, Base DN, or Bind DN".into()));
         }
+        // Changing the directory account invalidates its previously stored password.
+        if previous_bind != ldap.bind_dn {
+            delete_password = true;
+        }
+        if ldap.bind_dn.is_some() && p::str(v, "password").is_none() && delete_password {
+            return Err(CmdError::Params("new LDAP Bind DN requires its own LDAP password".into()));
+        }
         config.ldap = Some(ldap);
     }
-    let updated = s.update_account(config, None)?;
+    let ldap_password = p::str(v, "password").filter(|s| !s.is_empty()).map(str::to_string);
+    if ldap_password.is_some() && config.ldap.as_ref().and_then(|l| l.bind_dn.as_ref()).is_none() {
+        return Err(CmdError::Params("an LDAP Bind DN is required when setting a directory password".into()));
+    }
+    let updated = s.update_account(config.clone(), None)?;
+    if delete_password || ldap_password.is_some() {
+        s.push_job(mailcraft_model::Job::LdapPassword {
+            account: config,
+            password: mailcraft_model::job::Secret(ldap_password.unwrap_or_default()),
+        });
+    }
     s.directory.answers.clear();
     s.directory.rev = s.directory.rev.wrapping_add(1);
     Ok(updated)
