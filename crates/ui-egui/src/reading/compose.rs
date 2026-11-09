@@ -183,6 +183,7 @@ pub(super) fn recipient_field(
     hint: &str,
     focus: bool,
     suggestions: &[Contact],
+    sources: &[&'static str],
 ) -> bool {
     let t = st.tokens;
     let showing = st.suggest_field == Some(name) && !suggestions.is_empty();
@@ -255,7 +256,7 @@ pub(super) fn recipient_field(
                     .iter()
                     .map(|c| {
                         let name = if c.address.name.is_empty() { 0.0 } else { text_w(&c.address.name, &name_font) + 12.0 };
-                        name + text_w(&c.address.email, &mail_font)
+                        name + text_w(&c.address.email, &mail_font) + 82.0
                     })
                     .fold(0.0_f32, f32::max);
                 let w = (widest + 24.0).clamp(200.0, r.rect.width().clamp(200.0, 520.0));
@@ -266,7 +267,15 @@ pub(super) fn recipient_field(
                     if on || resp.hovered() {
                         ui.painter().rect_filled(row, 4.0, if on { t.accent_soft } else { t.hover_row });
                     }
-                    let clip = ui.painter().with_clip_rect(row.shrink2(vec2(8.0, 0.0)));
+                    let clip = ui.painter().with_clip_rect(egui::Rect::from_min_max(
+                        row.min + vec2(8.0, 0.0), row.max - vec2(76.0, 0.0),
+                    ));
+                    // A source is not a domain-name heuristic: it comes from
+                    // the real Directory, saved Contacts, or message-history set.
+                    if let Some(source) = sources.get(i) {
+                        ui.painter().text(row.right_center() - vec2(8.0, 0.0),
+                            egui::Align2::RIGHT_CENTER, *source, theme::regular(10.5), t.faint);
+                    }
                     let mut x = row.left() + 10.0;
                     if !c.address.name.is_empty() {
                         let g = clip.layout_no_wrap(c.address.name.clone(), name_font.clone(), t.text);
@@ -348,8 +357,15 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         .filter(|a| a.config.id == from || s.send_block(&a.config.id).is_none())
         .map(|a| (a.config.id.clone(), EmailAddress::new(a.config.name.clone(), a.config.email.clone()).to_string()))
         .collect();
-    // Suggestions for the recipient box being typed in (computed before the form borrows it).
-    let suggestions: Vec<Contact> = match (st.suggest_field, s.compose.as_ref()) {
+    // Keep the mode per compose message and window; a different message should not
+    // inherit a potentially restrictive GAL-only setting. Default is mixed.
+    let gal_mode_id = ui.ctx().id().with(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
+    let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
+    let has_directory = !s.directory_accounts().is_empty();
+
+    // Suggestions for the active recipient box, computed before borrowing compose.
+    // The authoritative directory must be queried even when local history is full.
+    let (suggestions, suggestion_sources): (Vec<Contact>, Vec<&'static str>) = match (st.suggest_field, s.compose.as_ref()) {
         (Some(f), Some(c)) => {
             let text = match f {
                 "to" => c.to.clone(),
@@ -358,13 +374,37 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
             };
             let token = mailcraft_engine::model::contacts::last_token(&text).to_string();
             if token.chars().count() < 1 || st.suggest_dismissed.as_deref() == Some(text.as_str()) {
-                Vec::new()
+                (Vec::new(), Vec::new())
             } else {
                 let present = text.to_lowercase();
-                s.suggest_contacts(&token, 8).into_iter().filter(|x| !present.contains(&x.address.email.to_lowercase())).take(6).collect()
+                let directory = s.address_book("directory", &token);
+                let saved = if gal_only { Vec::new() } else { s.address_book("people", &token) };
+                let candidates: Vec<Contact> = if gal_only {
+                    directory.iter().cloned().map(|address| Contact { address, ..Default::default() }).collect()
+                } else {
+                    s.suggest_contacts(&token, 8)
+                };
+                let candidates: Vec<Contact> = candidates
+                    .into_iter()
+                    .filter(|c| !present.contains(&c.address.email.to_lowercase()))
+                    .take(6)
+                    .collect();
+                let sources = candidates
+                    .iter()
+                    .map(|c| {
+                        if directory.iter().any(|d| d.email.eq_ignore_ascii_case(&c.address.email)) {
+                            "GAL"
+                        } else if saved.iter().any(|p| p.email.eq_ignore_ascii_case(&c.address.email)) {
+                            "Contacts"
+                        } else {
+                            "Recent"
+                        }
+                    })
+                    .collect();
+                (candidates, sources)
             }
         }
-        _ => Vec::new(),
+        _ => (Vec::new(), Vec::new()),
     };
     let clock = s.clock;
     // Delay Delivery holds mail in the Outbox, which only a server account's sends from.
@@ -644,10 +684,25 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                 "cc" => &mut c.cc,
                                 _ => &mut c.bcc,
                             };
-                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions) {
+                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions, &suggestion_sources) {
                                 let d = crate::Dialog::select_names(c, name);
                                 acts.push(Action::Dialog(d));
                             }
+                        }
+                        // This is a search scope, not a sending restriction: the
+                        // user can always type any valid SMTP address manually.
+                        if has_directory {
+                            ui.horizontal(|ui| {
+                                ui.add_space(LABEL_W - 8.0);
+                                let mut enabled = gal_only;
+                                if ui.checkbox(&mut enabled, "GAL only").on_hover_text(
+                                    "Suggest only addresses returned by the company directory. Other addresses may still be typed manually."
+                                ).changed() {
+                                    ui.ctx().data_mut(|d| d.insert_temp(gal_mode_id, enabled));
+                                    st.suggest_index = 0;
+                                    st.suggest_dismissed = None;
+                                }
+                            });
                         }
                     });
                 });
