@@ -155,6 +155,22 @@ mod tests {
         assert!(f.as_deref().is_some_and(|s| s.contains(r"a\2a\29\28mail=\2a\29")));
     }
     #[test]
+    fn plaintext_directory_mode_is_explicit_and_anonymous_only() {
+        let settings = LdapSettings {
+            url: "ldap://192.0.2.1:389".into(),
+            base_dn: "dc=example,dc=com".into(),
+            allow_insecure_anonymous: true,
+            ..LdapSettings::default()
+        };
+        // Must reject before any network I/O: no password on a cleartext wire.
+        assert!(search_directory(&settings, Some("secret"), "Alice").is_err());
+        let secured_bind = LdapSettings {
+            bind_dn: Some("cn=reader,dc=example,dc=com".into()),
+            ..settings
+        };
+        assert!(search_directory(&secured_bind, None, "Alice").is_err());
+    }
+    #[test]
     fn query_limits_and_unicode() {
         assert!(recipient_filter(LdapSchema::Exchange55, " ").is_none());
         assert!(recipient_filter(LdapSchema::Exchange55, &"x".repeat(129)).is_none());
