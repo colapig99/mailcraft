@@ -2,7 +2,11 @@ name: Legacy Exchange Windows test build
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
-    paths: ['.github/workflows/ldap-windows-build.yml']
+    paths:
+      - '.github/workflows/ldap-windows-build.yml'
+      - 'crates/net/src/ldap.rs'
+      - 'crates/net/src/ldap_windows.ps1'
+      - 'crates/ui-egui/src/dialogs/ldap.rs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +15,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.0'
@@ -28,8 +32,8 @@ jobs:
           Never test first with a domain administrator account.
           Do not distribute as an official MailCraft release.
           "@ | Set-Content ldap-poc/README.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: mailcraft-legacy-ldap-windows-poc
+          name: mailcraft-legacy-ldap-windows-poc-${{ github.run_number }}
           path: ldap-poc/
           retention-days: 7
