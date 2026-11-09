@@ -115,7 +115,7 @@ regeneration, CI, and LDAP protocol interoperability testing.
 
 ## Site configuration caution
 
-A reported domain controller/PDC at 10.10.2.31:389 is a **site fact**, not a
+The directory controller or PDC endpoint is a **site-specific configuration**, not a
 shippable default. The host of the Exchange 2003 mailbox may differ from the
 LDAP directory host. This private address must not be hard-coded in source;
 use administrator-provided settings. A classic Windows NT PDC is not
