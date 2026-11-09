@@ -41,8 +41,12 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     })
 }
 
-/// Require LDAPS or STARTTLS; never downgrade to cleartext or disable certificate validation.
+/// Require LDAPS or STARTTLS by default. If explicitly configured, permit
+/// cleartext LDAP only for anonymous searching; never downgrade on TLS errors.
 fn ldap_connection(settings: &LdapSettings) -> Result<LdapConn> {
+    if settings.allow_insecure_anonymous && settings.bind_dn.as_deref().is_some_and(|s| !s.trim().is_empty()) {
+        return Err(NetError::Refused("unencrypted LDAP cannot use a Bind DN or password".into()));
+    }
     let url = settings.url.trim();
     let starttls = if url.starts_with("ldaps://") {
         false
