@@ -88,6 +88,7 @@ try {
             [Console]::Out.WriteLine((ConvertTo-Json -InputObject @{
                 people = @($people); error = $null
             } -Depth 5 -Compress))
+            [Console]::Out.Flush()
         } catch {
             $category = "Unexpected"
             if ($_.Exception -is [System.DirectoryServices.Protocols.DirectoryOperationException]) {
@@ -109,6 +110,7 @@ try {
             [Console]::Out.WriteLine((ConvertTo-Json -InputObject @{
                 people = @(); error = $category
             } -Depth 3 -Compress))
+            [Console]::Out.Flush()
         }
     }
 } finally {
