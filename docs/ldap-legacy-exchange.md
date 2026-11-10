@@ -229,3 +229,47 @@ GAL-only mode. The existing short-term directory cache still applies.
   GAL membership has not been resolved yet by the directory query.
 - **Contacts** comes from saved contacts, and **GAL** is based on an actual
   matching directory reply; neither is inferred from an email domain.
+
+## Performance architecture for slow legacy PDCs
+
+The Windows integrated connector now uses **one hidden PowerShell worker process
+per account-worker thread**, with a **persistent SSPI-authenticated LDAP
+connection**, rather than launching a full PowerShell process and negotiating
+Windows authentication for every completed recipient search. That persistent
+connection requests both Signing and Sealing. The process is terminated when
+its owning worker thread exits or if a request exceeds the 18-second local
+deadline; a failed LDAP connection is disposed and recreated for a subsequent
+query.
+
+AD searches are **index-friendly prefix searches first**: display name,
+first/last name, alias, logon name, email and SMTP proxy prefix. The old
+leading-wildcard substring search happens **only if no result was found** and
+the query has **at least five characters**; its result count stays capped at
+50 and server time at eight seconds per request. Names found by the ordinary
+prefix filter normally cost one LDAP search, while a miss with five or more
+characters may still cost two. Searching a name fragment *in the middle* of
+a name with fewer than five characters will not match this optimized path.
+
+In the UI, query input is debounced for 350 ms and only the settled input
+submits an LDAP job. The existing in-memory directory cache retains successful
+answers for 300 seconds and empty/error answers for 30 seconds, and it keeps
+at most 200 query entries. No full GAL sync, periodic polling or broad
+unbounded downloads are performed.
+
+### Acceptance / benchmarking
+
+Test on a normal domain-joined Windows account with GAL-only enabled:
+1. Start MailCraft and type a known exact prefix (e.g. first name); measure
+   the first result, including initial worker startup.
+2. Repeat the same prefix immediately: the cached answer should appear
+   without another LDAP request.
+3. Search another employee: the SSPI helper and connection should be reused,
+   so it avoids the previous repeated PowerShell startup cost.
+4. Check employee aliases and a five-character middle-name fragment (fallback)
+   to verify matching fidelity, and retry following a long idle period.
+5. Watch Task Manager: expect a single hidden PowerShell worker for an active
+   Windows LDAP account worker (not one new process per lookup). Compare
+   process count and response latency with the previous build.
+
+The approach specifically avoids any GAL-wide scrape or server-side schema,
+ACL, index, or registry change on the legacy PDC.
