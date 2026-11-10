@@ -190,18 +190,84 @@ fn primary_proxy_address(entry: &SearchEntry) -> Option<String> {
         .or_else(|| values.iter().find_map(|v| v.strip_prefix("smtp:").map(str::to_string)))
 }
 
-/// Search through Windows' built-in LDAP stack with SSPI Negotiate and
-/// directory signing/sealing. The helper script is a fixed build-time resource;
-/// user input travels solely as JSON through stdin (never shell interpolation).
+/// A signed/sealed LDAP session is kept in the account worker's thread.
+/// Starting Windows PowerShell and negotiating SSPI on *each keystroke* was
+/// the dominant avoidable client overhead on legacy Exchange installations.
+#[cfg(windows)]
+struct WindowsLdapSession {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    replies: std::sync::mpsc::Receiver<std::io::Result<String>>,
+}
+
+#[cfg(windows)]
+impl Drop for WindowsLdapSession {
+    fn drop(&mut self) {
+        // Do not leave an invisible long-running PowerShell process behind.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[cfg(windows)]
+impl WindowsLdapSession {
+    fn launch() -> Result<Self> {
+        use std::io::BufRead;
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW);
+        let mut child = cmd.spawn().map_err(|e| NetError::Protocol(format!("cannot launch persistent Windows LDAP worker: {e}")))?;
+        let stdin = child.stdin.take().ok_or_else(|| NetError::Protocol("LDAP worker stdin unavailable".into()))?;
+        let stdout = child.stdout.take().ok_or_else(|| NetError::Protocol("LDAP worker stdout unavailable".into()))?;
+        let (sender, replies) = std::sync::mpsc::sync_channel(2);
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout).lines() {
+                let failed = line.is_err();
+                if sender.send(line).is_err() || failed {
+                    break;
+                }
+            }
+        });
+        Ok(Self { child, stdin, replies })
+    }
+
+    fn request(&mut self, body: &str) -> Result<String> {
+        use std::io::Write;
+        self.stdin.write_all(body.as_bytes()).and_then(|_| self.stdin.write_all(b"\n")).and_then(|_| self.stdin.flush())
+            .map_err(|e| NetError::Protocol(format!("cannot send LDAP query to worker: {e}")))?;
+        // A timeout kills the worker through Drop. The next query starts a
+        // fresh process; no unbounded queue of blocked LDAP requests.
+        let reply = self.replies.recv_timeout(Duration::from_secs(18))
+            .map_err(|_| NetError::Protocol("Windows LDAP worker response timed out".into()))?;
+        reply.map_err(|e| NetError::Protocol(format!("invalid Windows LDAP worker output: {e}")))
+    }
+}
+
+#[cfg(windows)]
+thread_local! {
+    static WINDOWS_LDAP_SESSION: std::cell::RefCell<Option<WindowsLdapSession>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Windows-native signed/sealed SSPI GAL query. One helper process and bound
+/// LDAP connection are reused for successive autocomplete queries on the
+/// same account thread. Each request is one UTF-8 JSON line, never shell code.
 #[cfg(windows)]
 fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec<(String, String)>> {
-    use std::io::{Read, Write};
-    use std::process::{Command, Stdio};
-
     #[derive(serde::Deserialize)]
     struct Person {
         name: String,
         email: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Response {
+        people: Vec<Person>,
+        error: Option<String>,
     }
 
     let filter = recipient_filter(settings.schema, query).ok_or_else(|| NetError::Refused("LDAP query must contain 1–128 characters".into()))?;
@@ -222,82 +288,31 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     let body = serde_json::json!({
         "host": host, "port": port, "base_dn": settings.base_dn,
         "filter": filter, "fallback_filter": if settings.schema == LdapSchema::ActiveDirectory { recipient_substring_filter(query) } else { None },
-        "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" }, "limit": MAX_RESULTS
-    })
-    .to_string();
+        "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" },
+        "limit": MAX_RESULTS
+    }).to_string();
 
-    use std::os::windows::process::CommandExt;
-
-    // Windows creates a console window for a console child of a GUI app unless
-    // explicitly told not to. That was causing a visible PowerShell popup on
-    // every GAL autocomplete request.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", include_str!("ldap_windows.ps1")])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    let mut child = cmd.spawn().map_err(|e| NetError::Protocol(format!("cannot launch Windows LDAP helper: {e}")))?;
-    let Some(mut input) = child.stdin.take() else {
-        return Err(NetError::Protocol("cannot open LDAP helper input".into()));
-    };
-    input.write_all(body.as_bytes()).map_err(|e| NetError::Protocol(format!("cannot submit LDAP search: {e}")))?;
-    drop(input);
-    // Read concurrently while waiting: a full stdout pipe must never block the
-    // helper and leave an invisible PowerShell process running indefinitely.
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(NetError::Protocol("cannot read Windows LDAP helper output".into()));
-    };
-    let reader = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let read = stdout.take(1_048_576).read_to_end(&mut output);
-        (read, output)
-    });
-    let stderr_reader = child.stderr.take().map(|stderr| {
-        std::thread::spawn(move || {
-            let mut details = Vec::new();
-            let _ = stderr.take(4096).read_to_end(&mut details);
-            details
-        })
-    });
-    let deadline = std::time::Instant::now() + Duration::from_secs(20);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
-            _ => break None,
+    let data = WINDOWS_LDAP_SESSION.with(|state| {
+        let mut guard = state.borrow_mut();
+        if guard.is_none() {
+            *guard = Some(WindowsLdapSession::launch()?);
         }
-    };
-    if status.is_none() {
-        let _ = child.kill();
-        let _ = child.wait();
+        let result = guard.as_mut().ok_or_else(|| NetError::Protocol("Windows LDAP worker not running".into()))?.request(&body);
+        if result.is_err() {
+            // Broken / hung helper must not poison the next lookup.
+            *guard = None;
+        }
+        result
+    })?;
+    let response: Response = serde_json::from_str(&data).map_err(|e| NetError::Protocol(format!("invalid LDAP helper JSON: {e}")))?;
+    if let Some(category) = response.error {
+        if category.is_empty() || category.len() > 64 || !category.bytes().all(|c| c.is_ascii_alphanumeric() || c == b':' || c == b'_') {
+            return Err(NetError::Auth("Windows LDAP worker returned an invalid error category".into()));
+        }
+        return Err(NetError::Auth(format!("Windows Integrated LDAP failed ({category})")));
     }
-    let output = reader.join().map_err(|_| NetError::Protocol("Windows LDAP output reader failed".into()))?;
-    let diagnostics = stderr_reader.and_then(|thread| thread.join().ok()).unwrap_or_default();
-    if status.is_none() {
-        return Err(NetError::Protocol("Windows LDAP query timed out after 20 seconds".into()));
-    }
-    output.0.map_err(|e| NetError::Protocol(format!("cannot read LDAP results: {e}")))?;
-    if !status.is_some_and(|s| s.success()) {
-        // Only accept a category emitted by our fixed helper; never echo
-        // arbitrary PowerShell stderr (potentially includes directory data).
-        let reason = std::str::from_utf8(&diagnostics)
-            .ok()
-            .and_then(|err| err.lines().find_map(|line| line.trim().strip_prefix("LDAP_HELPER_ERROR:")))
-            .filter(|category| {
-                !category.is_empty() && category.len() <= 64 && category.bytes().all(|c| c.is_ascii_alphanumeric() || c == b':' || c == b'_')
-            })
-            .unwrap_or("Unknown");
-        return Err(NetError::Auth(format!(
-            "Windows Integrated LDAP helper failed ({reason}); check the directory settings and Windows domain login"
-        )));
-    }
-    let people: Vec<Person> = serde_json::from_slice(&output.1).map_err(|e| NetError::Protocol(format!("invalid LDAP helper response: {e}")))?;
     let mut results = Vec::new();
-    for p in people.into_iter().take(MAX_RESULTS) {
+    for p in response.people.into_iter().take(MAX_RESULTS) {
         if !mailcraft_model::addr::is_valid_email(&p.email) {
             continue;
         }
