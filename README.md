@@ -60,6 +60,26 @@ cd apps/mailcraft-web && trunk serve           # browser: http://127.0.0.1:8774/
 - MailCraft keeps its data in `%APPDATA%\MailCraft` (Windows), `~/Library/Application Support/MailCraft` (macOS) or `~/.local/share/mailcraft` (Linux). To use another folder, pass `--data DIR` or set `MAILCRAFT_DATA`.
 - To put the web build on your own site, see [hosting the web build](packaging/web/README.md).
 
+## Legacy Exchange 5.5 / 2003 GAL — experimental fork support
+
+This fork's `feature/exchange-legacy-ldap` branch includes a **read-only**
+enterprise directory connector alongside IMAP/SMTP email. Windows AD LDAP can
+use the current domain identity with SSPI Negotiate and LDAP signing/sealing;
+this is **not** EWS or native Exchange MAPI. Exchange 2003 AD GAL has been
+tested in a pilot; Exchange 5.5 directory compatibility is **not verified**.
+This feature is an unsigned test build and remains a Draft PR. No official
+production-support claim is made.
+
+- [繁體中文：安裝、使用、設定／資料儲存及備份完整手冊](docs/legacy-exchange-gal-user-manual.zh-TW.md)
+- [繁體中文：Helpdesk、故障排除、回復、效能試點 Runbook](docs/legacy-exchange-gal-support-runbook.zh-TW.md)
+- [Developer notes: LDAP protocols and security](docs/ldap-legacy-exchange.md)
+- [Windows POC build workflow](.github/workflows/ldap-windows-build.yml)
+- [LDAP unit tests / CI workflow](.github/workflows/ldap-check.yml)
+
+No internal addresses, live directory data, or credentials belong in public
+issues or example configs. **Do not merge this experimental branch without
+reviewing pilot results and the feature's security constraints.**
+
 ## Documentation
 
 - [What each version added](CHANGELOG.md)
