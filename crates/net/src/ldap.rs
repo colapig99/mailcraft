@@ -49,7 +49,9 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
 /// found nobody. It preserves searches by middle names and mail substrings.
 fn recipient_substring_filter(query: &str) -> Option<String> {
     let trimmed = query.trim();
-    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS {
+    // A substring fallback has a leading wildcard and may scan broadly.
+    // Avoid it for short strings which generate many matches and load the PDC.
+    if trimmed.chars().count() < 5 || trimmed.chars().count() > MAX_QUERY_CHARS {
         return None;
     }
     let q = escape_filter_value(trimmed);
@@ -364,6 +366,7 @@ mod tests {
         assert!(filter.contains("(givenName=toney*)"));
         assert!(filter.contains("(sn=toney*)"));
         assert!(!filter.contains("(displayName=*toney*)"));
+        assert!(recipient_substring_filter("tone").is_none());
         let fallback = recipient_substring_filter("toney").unwrap();
         assert!(fallback.contains("(displayName=*toney*)"));
         assert!(fallback.contains("(proxyAddresses=*toney*)"));
