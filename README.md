@@ -33,7 +33,7 @@ of your mail on your computer, so it works offline.
 - **Organising:** archive, flag, pin, snooze, categories, Focused and Other, rules, and Undo.
 - **Search:** works offline, with `from:`, `subject:`, `has:attachment`, `is:unread` and more.
 - **Calendar and people:** day, week and month views, meeting invitations, an address book, and CalDAV/CardDAV.
-- **Private and secure:** MailCraft talks only to your servers, always over TLS. Passwords stay in the system keychain. Remote pictures load only when you ask. S/MIME and OpenPGP sign and encrypt, and the message you're writing says whether everyone in it can receive it encrypted.
+- **Private and secure:** Standard secure transports use TLS; this experimental fork also offers explicitly configured legacy LDAP modes, including Windows-integrated signing/sealing and restricted anonymous cleartext (see the legacy manual). In normal desktop mode, passwords use the system keychain; in portable mode they are memory-only. Remote pictures load only when requested. S/MIME and OpenPGP support message signing and encryption.
 - **Everywhere:** Windows, macOS, Linux and the browser (JMAP accounts only), in 15 interface languages.
 - **Scriptable:** every action is a command with an id. The ribbon, shortcuts, the CLI and `--cmd` all run the same commands.
 
