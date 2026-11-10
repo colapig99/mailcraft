@@ -372,6 +372,21 @@ mod tests {
         assert!(fallback.contains("(proxyAddresses=*toney*)"));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn persistent_windows_helper_answers_two_requests_without_restart() {
+        let mut helper = WindowsLdapSession::launch().expect("Windows LDAP helper must launch");
+        // Invalid local parameters, deliberately no network connection.
+        let invalid = r#"{"host":"","port":389,"base_dn":"","filter":"(mail=*)","limit":5,"schema":"ad"}"#;
+        let first = helper.request(invalid).expect("first helper response");
+        let second = helper.request(invalid).expect("second helper response");
+        for result in [first, second] {
+            let reply: serde_json::Value = serde_json::from_str(&result).expect("one UTF-8 JSON envelope per request");
+            assert_eq!(reply["error"], "HelperRuntime");
+            assert_eq!(reply["people"].as_array().map(Vec::len), Some(0));
+        }
+    }
+
     #[test]
     fn query_limits_and_unicode() {
         assert!(recipient_filter(LdapSchema::Exchange55, " ").is_none());
