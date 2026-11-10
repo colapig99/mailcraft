@@ -3,6 +3,7 @@ on:
   push:
     branches: [feature/exchange-legacy-ldap]
     paths: ['.github/workflows/gal-perf-format-once.yml']
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
