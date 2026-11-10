@@ -35,10 +35,27 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
     let q = escape_filter_value(trimmed);
     Some(match schema {
         LdapSchema::Exchange55 => format!("(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"),
+        // Prefix filters can use AD attribute indexes. Leading wildcards
+        // require broad scans and are expensive on legacy domain controllers.
+        // On a miss, search_directory uses the older substring filter as a
+        // compatibility fallback (e.g. searching the middle of a display name).
         LdapSchema::ActiveDirectory => format!(
-            "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
+            "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn={q}*)(displayName={q}*)(mail={q}*)(mailNickname={q}*)(sAMAccountName={q}*)(givenName={q}*)(sn={q}*)(proxyAddresses=SMTP:{q}*)(proxyAddresses=smtp:{q}*)))"
         ),
     })
+}
+
+/// Legacy substring search is a fallback only when an indexed prefix query
+/// found nobody. It preserves searches by middle names and mail substrings.
+fn recipient_substring_filter(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > MAX_QUERY_CHARS {
+        return None;
+    }
+    let q = escape_filter_value(trimmed);
+    Some(format!(
+        "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
+    ))
 }
 
 /// Require LDAPS or STARTTLS by default. If explicitly configured, permit
@@ -107,10 +124,21 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
         LdapSchema::Exchange55 => vec!["cn", "displayName", "mail", "rfc822Mailbox"],
         LdapSchema::ActiveDirectory => vec!["cn", "displayName", "mail", "proxyAddresses"],
     };
-    let reply = conn
+    let mut reply = conn
         .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
-        .search(&settings.base_dn, Scope::Subtree, &filter, attrs)
+        .search(&settings.base_dn, Scope::Subtree, &filter, attrs.clone())
         .map_err(|e| NetError::Protocol(format!("LDAP search failed: {e}")))?;
+    // The fast indexed search handles ordinary name/alias prefixes. One
+    // substring retry is allowed only for a successful empty AD response;
+    // do not retry on an LDAP error, timeout or server-side result cap.
+    if settings.schema == LdapSchema::ActiveDirectory && reply.1.rc == 0 && reply.0.is_empty()
+        && let Some(fallback) = recipient_substring_filter(query)
+    {
+        reply = conn
+            .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
+            .search(&settings.base_dn, Scope::Subtree, &fallback, attrs)
+            .map_err(|e| NetError::Protocol(format!("LDAP fallback search failed: {e}")))?;
+    }
     // LDAP result 4 (sizeLimitExceeded) can still contain the first 50 valid
     // entries; show that bounded prefix instead of incorrectly saying no one exists.
     if reply.1.rc != 0 && !(reply.1.rc == 4 && !reply.0.is_empty()) {
@@ -193,7 +221,8 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     }
     let body = serde_json::json!({
         "host": host, "port": port, "base_dn": settings.base_dn,
-        "filter": filter, "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" }, "limit": MAX_RESULTS
+        "filter": filter, "fallback_filter": if settings.schema == LdapSchema::ActiveDirectory { recipient_substring_filter(query) } else { None },
+        "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" }, "limit": MAX_RESULTS
     })
     .to_string();
 
@@ -314,11 +343,15 @@ mod tests {
     #[test]
     fn ad_directory_search_includes_alias_and_logon_name() {
         let filter = recipient_filter(LdapSchema::ActiveDirectory, "toney").unwrap();
-        assert!(filter.contains("(sAMAccountName=*toney*)"));
-        assert!(filter.contains("(mailNickname=*toney*)"));
-        assert!(filter.contains("(proxyAddresses=*toney*)"));
-        assert!(filter.contains("(givenName=*toney*)"));
-        assert!(filter.contains("(sn=*toney*)"));
+        assert!(filter.contains("(sAMAccountName=toney*)"));
+        assert!(filter.contains("(mailNickname=toney*)"));
+        assert!(filter.contains("(proxyAddresses=SMTP:toney*)"));
+        assert!(filter.contains("(givenName=toney*)"));
+        assert!(filter.contains("(sn=toney*)"));
+        assert!(!filter.contains("(displayName=*toney*)"));
+        let fallback = recipient_substring_filter("toney").unwrap();
+        assert!(fallback.contains("(displayName=*toney*)"));
+        assert!(fallback.contains("(proxyAddresses=*toney*)"));
     }
 
     #[test]
