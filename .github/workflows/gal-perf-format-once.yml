@@ -1,4 +1,5 @@
 name: Format persistent GAL changes
+# Trigger one-time formatting of the latest performance branch
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
