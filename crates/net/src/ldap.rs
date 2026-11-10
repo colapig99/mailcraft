@@ -133,7 +133,9 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
     // The fast indexed search handles ordinary name/alias prefixes. One
     // substring retry is allowed only for a successful empty AD response;
     // do not retry on an LDAP error, timeout or server-side result cap.
-    if settings.schema == LdapSchema::ActiveDirectory && reply.1.rc == 0 && reply.0.is_empty()
+    if settings.schema == LdapSchema::ActiveDirectory
+        && reply.1.rc == 0
+        && reply.0.is_empty()
         && let Some(fallback) = recipient_substring_filter(query)
     {
         reply = conn
@@ -241,12 +243,15 @@ impl WindowsLdapSession {
 
     fn request(&mut self, body: &str) -> Result<String> {
         use std::io::Write;
-        self.stdin.write_all(body.as_bytes()).and_then(|_| self.stdin.write_all(b"\n")).and_then(|_| self.stdin.flush())
+        self.stdin
+            .write_all(body.as_bytes())
+            .and_then(|_| self.stdin.write_all(b"\n"))
+            .and_then(|_| self.stdin.flush())
             .map_err(|e| NetError::Protocol(format!("cannot send LDAP query to worker: {e}")))?;
         // A timeout kills the worker through Drop. The next query starts a
         // fresh process; no unbounded queue of blocked LDAP requests.
-        let reply = self.replies.recv_timeout(Duration::from_secs(18))
-            .map_err(|_| NetError::Protocol("Windows LDAP worker response timed out".into()))?;
+        let reply =
+            self.replies.recv_timeout(Duration::from_secs(18)).map_err(|_| NetError::Protocol("Windows LDAP worker response timed out".into()))?;
         reply.map_err(|e| NetError::Protocol(format!("invalid Windows LDAP worker output: {e}")))
     }
 }
@@ -292,7 +297,8 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
         "filter": filter, "fallback_filter": if settings.schema == LdapSchema::ActiveDirectory { recipient_substring_filter(query) } else { None },
         "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" },
         "limit": MAX_RESULTS
-    }).to_string();
+    })
+    .to_string();
 
     let data = WINDOWS_LDAP_SESSION.with(|state| {
         let mut guard = state.borrow_mut();
