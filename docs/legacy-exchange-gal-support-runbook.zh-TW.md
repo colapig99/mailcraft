@@ -42,7 +42,7 @@ Get-ChildItem -LiteralPath $base -Force -ErrorAction SilentlyContinue |
 
 \`\`\`powershell
 whoami
-# Windows 7+ 可使用 Test-NetConnection（不是 Windows Server 2003 本身的命令）
+# 在有 Test-NetConnection Cmdlet 的較新 Windows／PowerShell 上可使用（Windows Server 2003 沒有）
 Test-NetConnection -ComputerName directory.example.com -Port 389
 # 若較舊電腦沒有此 Cmdlet，改用公司核准的 TCP 連接工具；
 # 這個命令只測 TCP Port，不代表 LDAP Bind 已成功。
@@ -106,17 +106,6 @@ powershell.exe -NoProfile -File "$HOME\Test-LegacyGal.ps1" -Server directory.exa
 4. Portable 模式備份整個 \`MailCraftData\`；不能假設備份包含密碼。
 5. 將備份存入存取受控、加密且有版本日期的公司儲存區；不要放在共用公開網盤。
 6. 標記資料備份完成時間，執行安全的完整性檢查（檔案數、容量、SHA-256）。
-
-**參考備份範例**（先由管理員確認路徑，避免複製了錯的資料；示例不會自動尋找重定向的 Documents）：
-
-\`\`\`powershell
-$source = Join-Path $env:APPDATA 'MailCraft'
-$destination = 'D:\ApprovedBackup\MailCraft-YYYYMMDD\settings'
-New-Item -ItemType Directory -Path $destination -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $source '*') -Destination $destination -Recurse -Force
-# 上述為範例：在 PowerShell 中 -LiteralPath 不展開 *；
-# 實際操作請依下一段提供的可靠目錄複製方式，切勿直接照抄 *。
-\`\`\`
 
 **可靠複製方式**（請在已確認 MailCraft 完全關閉後操作）：
 
