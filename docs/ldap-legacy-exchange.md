@@ -1,5 +1,14 @@
 # Exchange 5.5 / 2003 LDAP Global Address List
 
+> **Operational documentation (Traditional Chinese):**
+> [Installation, configuration, data storage and user manual](./legacy-exchange-gal-user-manual.zh-TW.md) |
+> [Technical support, backups, troubleshooting and pilot load-test runbook](./legacy-exchange-gal-support-runbook.zh-TW.md).
+>
+> Documentation-only update as of 2026-11-10: **search filters, cache
+> TTLs, Windows worker, query behavior and security settings are unchanged**.
+> This remains a Draft POC; no Exchange 5.5 live compatibility or 100-user
+> load-test certification is implied.
+
 This branch adds a **read-only LDAP directory source** to MailCraft's existing
 recipient completion / Select Names flow. It does not add EWS, CalDAV, mailbox
 personal contacts, Exchange public folders, or MAPI/RPC support.
