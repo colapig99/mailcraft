@@ -1,5 +1,5 @@
 name: Legacy Exchange Windows test build
-# Performance POC: persistent signed/sealed LDAP worker and indexed search
+# Performance POC: persistent signed/sealed LDAP worker, indexed and historical alias search
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
