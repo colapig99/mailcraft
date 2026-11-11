@@ -282,3 +282,37 @@ Test on a normal domain-joined Windows account with GAL-only enabled:
 
 The approach specifically avoids any GAL-wide scrape or server-side schema,
 ACL, index, or registry change on the legacy PDC.
+
+
+### 2026-11-11: conservative alias/name prefix matching (pilot)
+
+One request can search a name in its **literal form** and one additional
+separator variant. For example, `Alice Smith` probes `Alice Smith*` and
+`Alice_Smith*` in the same bounded OR filter, checking real directory
+`mailNickname`, `displayName`, `cn`, `mail`, and version-appropriate
+address attributes. Conversely, `Alice_Smith` can match a historic Alias
+containing a space. This is **not** a general punctuation/romanization
+normalizer: old aliases can be independent abbreviations or misspellings;
+always use the server-provided SMTP address. Names with no separator remain
+unchanged, and the client must not invent mail addresses.
+
+Prefer prefix queries to avoid leading-wildcard LDAP scans. A **single**
+substring fallback is still available only when the prefix lookup succeeds
+with *zero* returned directory records and the string has **five or more
+characters**. No additional fallback on timeouts/errors/full result sets.
+This rule now applies to both directory schemas, with the appropriate
+schema-specific attribute filter. A missing usable SMTP field is not
+automatically repaired by guessing a domain.
+
+The returned entries are capped at 50, server search time at 8 seconds
+per search; Windows integrated mode reuses the existing signed/sealed
+PowerShell/SSPI helper, with a bounded local wait. Input debounce and cache
+TTLs **are unchanged**. No schema, index, account, or directory
+configuration is modified server-side.
+
+The source includes synthetic tests for aliases containing spaces,
+underscores, aliases without separators, and LDAP filter escaping. **Do not
+include employee names, email addresses, internal directory IPs, raw
+directory dumps or credentials in public test fixtures**. This change
+remains a Draft POC pending CI, signed/sealed Windows smoke testing and
+field validation before broad rollout.
