@@ -1,5 +1,5 @@
 name: Format persistent GAL changes
-# Trigger one-time formatting of the latest performance branch
+# Trigger formatter for bounded historical alias prefix matching (2026-11-11)
 on:
   push:
     branches: [feature/exchange-legacy-ldap]
