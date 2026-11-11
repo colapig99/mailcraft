@@ -90,9 +90,9 @@ fn recipient_substring_filter(schema: LdapSchema, query: &str) -> Option<String>
     }
     let q = escape_filter_value(trimmed);
     Some(match schema {
-        LdapSchema::Exchange55 => format!(
-            "(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mailNickname=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"
-        ),
+        LdapSchema::Exchange55 => {
+            format!("(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mailNickname=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))")
+        }
         LdapSchema::ActiveDirectory => format!(
             "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
         ),
