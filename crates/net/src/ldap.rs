@@ -57,7 +57,9 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
         // A historical alias may contain spaces; later aliases use underscores.
         terms.push(format!("(mailNickname={q}*)"));
         terms.push(format!("(mail={q}*)"));
-        terms.push(format!("(rfc822Mailbox={q}*)"));
+        if schema == LdapSchema::Exchange55 {
+            terms.push(format!("(rfc822Mailbox={q}*)"));
+        }
         if schema == LdapSchema::ActiveDirectory {
             terms.push(format!("(sAMAccountName={q}*)"));
             terms.push(format!("(givenName={q}*)"));
@@ -79,7 +81,7 @@ pub fn recipient_filter(schema: LdapSchema, query: &str) -> Option<String> {
 
 /// Legacy substring search is a fallback only when an indexed prefix query
 /// found nobody. It preserves searches by middle names and mail substrings.
-fn recipient_substring_filter(query: &str) -> Option<String> {
+fn recipient_substring_filter(schema: LdapSchema, query: &str) -> Option<String> {
     let trimmed = query.trim();
     // A substring fallback has a leading wildcard and may scan broadly.
     // Avoid it for short strings which generate many matches and load the PDC.
@@ -87,9 +89,14 @@ fn recipient_substring_filter(query: &str) -> Option<String> {
         return None;
     }
     let q = escape_filter_value(trimmed);
-    Some(format!(
-        "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
-    ))
+    Some(match schema {
+        LdapSchema::Exchange55 => format!(
+            "(&(|(mail=*)(rfc822Mailbox=*))(|(cn=*{q}*)(displayName=*{q}*)(mailNickname=*{q}*)(mail=*{q}*)(rfc822Mailbox=*{q}*)))"
+        ),
+        LdapSchema::ActiveDirectory => format!(
+            "(&(|(mail=*)(proxyAddresses=SMTP:*))(!(msExchHideFromAddressLists=TRUE))(|(objectCategory=person)(objectCategory=group))(|(cn=*{q}*)(displayName=*{q}*)(mail=*{q}*)(mailNickname=*{q}*)(sAMAccountName=*{q}*)(givenName=*{q}*)(sn=*{q}*)(proxyAddresses=*{q}*)))"
+        ),
+    })
 }
 
 /// Require LDAPS or STARTTLS by default. If explicitly configured, permit
@@ -165,10 +172,9 @@ pub fn search_directory(settings: &LdapSettings, password: Option<&str>, query: 
     // The fast indexed search handles ordinary name/alias prefixes. One
     // substring retry is allowed only for a successful empty AD response;
     // do not retry on an LDAP error, timeout or server-side result cap.
-    if settings.schema == LdapSchema::ActiveDirectory
-        && reply.1.rc == 0
+    if reply.1.rc == 0
         && reply.0.is_empty()
-        && let Some(fallback) = recipient_substring_filter(query)
+        && let Some(fallback) = recipient_substring_filter(settings.schema, query)
     {
         reply = conn
             .with_search_options(SearchOptions::new().sizelimit(MAX_RESULTS as i32).timelimit(8))
@@ -404,45 +410,46 @@ mod tests {
         assert!(filter.contains("(givenName=toney*)"));
         assert!(filter.contains("(sn=toney*)"));
         assert!(!filter.contains("(displayName=*toney*)"));
-        assert!(recipient_substring_filter("tone").is_none());
-        let fallback = recipient_substring_filter("toney").unwrap();
+        assert!(recipient_substring_filter(LdapSchema::ActiveDirectory, "tone").is_none());
+        let fallback = recipient_substring_filter(LdapSchema::ActiveDirectory, "toney").unwrap();
         assert!(fallback.contains("(displayName=*toney*)"));
         assert!(fallback.contains("(proxyAddresses=*toney*)"));
     }
 
     #[test]
     fn legacy_alias_formats_are_covered_by_one_prefix_filter() {
-        let space = recipient_filter(LdapSchema::ActiveDirectory, "Spring Wu").unwrap();
-        assert!(space.contains("(mailNickname=Spring Wu*)"));
-        assert!(space.contains("(mailNickname=Spring_Wu*)"));
-        assert!(space.contains("(displayName=Spring Wu*)"));
-        assert!(!space.contains("(displayName=*Spring Wu*)"));
+        let space = recipient_filter(LdapSchema::ActiveDirectory, "Alice Smith").unwrap();
+        assert!(space.contains("(mailNickname=Alice Smith*)"));
+        assert!(space.contains("(mailNickname=Alice_Smith*)"));
+        assert!(space.contains("(displayName=Alice Smith*)"));
+        assert!(!space.contains("(displayName=*Alice Smith*)"));
 
-        let underscore = recipient_filter(LdapSchema::ActiveDirectory, "ch_chan").unwrap();
-        assert!(underscore.contains("(mailNickname=ch_chan*)"));
-        assert!(underscore.contains("(mailNickname=ch chan*)"));
-        assert!(underscore.contains("(displayName=ch chan*)"));
+        let underscore = recipient_filter(LdapSchema::ActiveDirectory, "sam_lee").unwrap();
+        assert!(underscore.contains("(mailNickname=sam_lee*)"));
+        assert!(underscore.contains("(mailNickname=sam lee*)"));
+        assert!(underscore.contains("(displayName=sam lee*)"));
 
-        let special = recipient_filter(LdapSchema::ActiveDirectory, "LeungKanSan").unwrap();
-        assert!(special.contains("(mailNickname=LeungKanSan*)"));
+        let special = recipient_filter(LdapSchema::ActiveDirectory, "JennyLee").unwrap();
+        assert!(special.contains("(mailNickname=JennyLee*)"));
         // Do not invent spelling variations, or assume email local parts
         // have any fixed relationship to names/aliases.
-        assert!(!special.contains("LeungKanSang"));
+        assert!(!special.contains("JennyLeeg"));
     }
 
     #[test]
     fn exchange55_prefix_search_keeps_mail_filter_and_alias_variants() {
-        let filter = recipient_filter(LdapSchema::Exchange55, "spring wu").unwrap();
+        let filter = recipient_filter(LdapSchema::Exchange55, "alice smith").unwrap();
         assert!(filter.contains("(|(mail=*)(rfc822Mailbox=*))"));
-        assert!(filter.contains("(mailNickname=spring wu*)"));
-        assert!(filter.contains("(mailNickname=spring_wu*)"));
-        assert!(!filter.contains("(cn=*spring wu*)"));
+        assert!(filter.contains("(mailNickname=alice smith*)"));
+        assert!(filter.contains("(mailNickname=alice_smith*)"));
+        assert!(!filter.contains("(cn=*alice smith*)"));
+        assert!(recipient_substring_filter(LdapSchema::Exchange55, "alice").unwrap().contains("(cn=*alice*)"));
     }
 
     #[test]
     fn ldap_filter_escapes_alternate_forms_without_injection() {
-        let filter = recipient_filter(LdapSchema::ActiveDirectory, "ch_*)(mail=*)").unwrap();
-        assert!(filter.contains(r"ch_\2a\29\28mail=\2a\29"));
+        let filter = recipient_filter(LdapSchema::ActiveDirectory, "sam_*)(mail=*)").unwrap();
+        assert!(filter.contains(r"sam_\2a\29\28mail=\2a\29"));
         assert!(!filter.contains("(mail=*) ("));
         assert!(recipient_filter(LdapSchema::ActiveDirectory, " ").is_none());
     }
