@@ -332,7 +332,7 @@ fn windows_integrated_search(settings: &LdapSettings, query: &str) -> Result<Vec
     }
     let body = serde_json::json!({
         "host": host, "port": port, "base_dn": settings.base_dn,
-        "filter": filter, "fallback_filter": if settings.schema == LdapSchema::ActiveDirectory { recipient_substring_filter(query) } else { None },
+        "filter": filter, "fallback_filter": if settings.schema == LdapSchema::ActiveDirectory { recipient_substring_filter(settings.schema, query) } else { None },
         "schema": if settings.schema == LdapSchema::Exchange55 { "exchange55" } else { "ad" },
         "limit": MAX_RESULTS
     })
