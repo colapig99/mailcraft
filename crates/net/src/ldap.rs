@@ -433,7 +433,7 @@ mod tests {
         assert!(special.contains("(mailNickname=JennyLee*)"));
         // Do not invent spelling variations, or assume email local parts
         // have any fixed relationship to names/aliases.
-        assert!(!special.contains("JennyLeeg"));
+        assert!(!special.contains("JennyLeigh"));
     }
 
     #[test]
