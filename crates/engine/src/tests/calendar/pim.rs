@@ -121,8 +121,8 @@ fn people_in_the_address_book() {
 
     // Autocomplete deletion must affect only one local card, never other
     // addresses in the mail history or a synced/server-backed address book.
-    let local_uid = s.run("contact.create", &json!({"name": "Wrong Address", "emails": ["wrong@studio.example"]})).unwrap()["uid"]
-        .as_str().unwrap().to_string();
+    let local_uid =
+        s.run("contact.create", &json!({"name": "Wrong Address", "emails": ["wrong@studio.example"]})).unwrap()["uid"].as_str().unwrap().to_string();
     assert!(s.run("contact.deleteLocalByEmail", &json!({"email": "wrong@studio.example"})).is_ok());
     assert!(s.find_person(&local_uid).is_none());
     assert!(s.run("contact.deleteLocalByEmail", &json!({"email": "unknown@studio.example"})).is_err());
