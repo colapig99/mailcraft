@@ -241,7 +241,15 @@ pub(super) fn recipient_field(
         }
     }
     if r.changed() {
-        *value = addr::separate_recipient_emails(value);
+        let separated = addr::separate_recipient_emails(value);
+        if *value != separated {
+            *value = separated;
+            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
+                let end = egui::text::CCursor::new(value.chars().count());
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+                state.store(ui.ctx(), r.id);
+            }
+        }
         st.suggest_index = 0;
         st.suggest_dismissed = None;
     }
