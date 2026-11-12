@@ -151,22 +151,25 @@ impl ContactBook {
 
 /// The address being typed in a recipient box: the text after the last `,` or `;`.
 pub fn last_token(field: &str) -> &str {
-    let tail = field.rsplit([',', ';']).next().unwrap_or("").trim_start();
-    // A pasted, complete address followed by whitespace starts a new lookup,
-    // even if the user did not type a comma or semicolon.
-    // Do not split ordinary multi-word names such as "Chan Tai Man".
-    if let Some(end) = tail.find('>') {
-        let (before, after) = tail.split_at(end + 1);
-        if before.contains('<') && !after.is_empty() && after.chars().next().is_some_and(char::is_whitespace) {
-            return after.trim_start();
+    let mut tail = field.rsplit([',', ';']).next().unwrap_or("").trim_start();
+    // Skip any number of complete preceding recipients separated by spaces,
+    // without splitting normal multi-word names such as "Chan Tai Man".
+    loop {
+        if let Some(end) = tail.find('>') {
+            let (before, after) = tail.split_at(end + 1);
+            if before.contains('<') && after.chars().next().is_some_and(char::is_whitespace) {
+                tail = after.trim_start();
+                continue;
+            }
         }
-    }
-    if let Some((first, rest)) = tail.split_once(char::is_whitespace) {
-        if crate::addr::is_valid_email(first) {
-            return rest.trim_start();
+        if let Some((first, rest)) = tail.split_once(char::is_whitespace)
+            && crate::addr::is_valid_email(first)
+        {
+            tail = rest.trim_start();
+            continue;
         }
+        return tail;
     }
-    tail
 }
 
 /// `field` with its last, half-typed address replaced by `a` and a separator for the next one.
@@ -308,6 +311,7 @@ mod tests {
         assert_eq!(last_token("a@x; "), "");
         assert_eq!(last_token("unknown@example.com Alice"), "Alice");
         assert_eq!(last_token("unknown@example.com Alice Smith"), "Alice Smith");
+        assert_eq!(last_token("bad@example.com next@example.com Chan Tai"), "Chan Tai");
         assert_eq!(last_token("Alice <alice@example.com> Bob"), "Bob");
         assert_eq!(last_token("Chan Tai Man"), "Chan Tai Man");
         assert_eq!(last_token("unknown@example.com; Bob"), "Bob");
