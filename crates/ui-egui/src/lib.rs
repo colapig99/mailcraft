@@ -375,6 +375,9 @@ pub struct UiState {
     /// The recipient box a suggestion was just picked into: it keeps the cursor through the rest
     /// of that click (the release lands outside the box, which would otherwise end its focus).
     pub(crate) suggest_refocus: Option<&'static str>,
+    /// Autocomplete state belongs to a compose message, not the global UI.
+    pub(crate) suggest_owner: Option<u64>,
+    pub(crate) suggest_by_compose: HashMap<u64, (Option<&'static str>, usize, Option<String>, Option<&'static str>)>,
     /// Installed Craft apps (command, path), found at start-up.
     pub(crate) craft_apps: Vec<(&'static str, PathBuf)>,
     /// The interface language setting (`auto` or a language code).
@@ -541,6 +544,8 @@ impl MailApp {
                 suggest_index: 0,
                 suggest_dismissed: None,
                 suggest_refocus: None,
+                suggest_owner: None,
+                suggest_by_compose: HashMap::new(),
                 craft_apps: Vec::new(),
                 language: i18n::AUTO.into(),
                 fonts: (None, None),
