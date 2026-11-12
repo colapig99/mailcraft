@@ -33,7 +33,7 @@ of your mail on your computer, so it works offline.
 - **Organising:** archive, flag, pin, snooze, categories, Focused and Other, rules, and Undo.
 - **Search:** works offline, with `from:`, `subject:`, `has:attachment`, `is:unread` and more.
 - **Calendar and people:** day, week and month views, meeting invitations, an address book, and CalDAV/CardDAV.
-- **Private and secure:** MailCraft talks only to your servers, always over TLS. Passwords stay in the system keychain. Remote pictures load only when you ask. S/MIME and OpenPGP sign and encrypt, and the message you're writing says whether everyone in it can receive it encrypted.
+- **Private and secure:** Standard secure transports use TLS; this experimental fork also offers explicitly configured legacy LDAP modes, including Windows-integrated signing/sealing and restricted anonymous cleartext (see the legacy manual). In normal desktop mode, passwords use the system keychain; in portable mode they are memory-only. Remote pictures load only when requested. S/MIME and OpenPGP support message signing and encryption.
 - **Everywhere:** Windows, macOS, Linux and the browser (JMAP accounts only), in 15 interface languages.
 - **Scriptable:** every action is a command with an id. The ribbon, shortcuts, the CLI and `--cmd` all run the same commands.
 
@@ -59,6 +59,26 @@ cd apps/mailcraft-web && trunk serve           # browser: http://127.0.0.1:8774/
 - The CLI reads your password from `MAILCRAFT_PASSWORD`, or asks for it. It never stores it.
 - MailCraft keeps its data in `%APPDATA%\MailCraft` (Windows), `~/Library/Application Support/MailCraft` (macOS) or `~/.local/share/mailcraft` (Linux). To use another folder, pass `--data DIR` or set `MAILCRAFT_DATA`.
 - To put the web build on your own site, see [hosting the web build](packaging/web/README.md).
+
+## Legacy Exchange 5.5 / 2003 GAL — experimental fork support
+
+This fork's `feature/exchange-legacy-ldap` branch includes a **read-only**
+enterprise directory connector alongside IMAP/SMTP email. Windows AD LDAP can
+use the current domain identity with SSPI Negotiate and LDAP signing/sealing;
+this is **not** EWS or native Exchange MAPI. Exchange 2003 AD GAL has been
+tested in a pilot; Exchange 5.5 directory compatibility is **not verified**.
+This feature is an unsigned test build and remains a Draft PR. No official
+production-support claim is made.
+
+- [繁體中文：安裝、使用、設定／資料儲存及備份完整手冊](docs/legacy-exchange-gal-user-manual.zh-TW.md)
+- [繁體中文：Helpdesk、故障排除、回復、效能試點 Runbook](docs/legacy-exchange-gal-support-runbook.zh-TW.md)
+- [Developer notes: LDAP protocols and security](docs/ldap-legacy-exchange.md)
+- [Windows POC build workflow](.github/workflows/ldap-windows-build.yml)
+- [LDAP unit tests / CI workflow](.github/workflows/ldap-check.yml)
+
+No internal addresses, live directory data, or credentials belong in public
+issues or example configs. **Do not merge this experimental branch without
+reviewing pilot results and the feature's security constraints.**
 
 ## Documentation
 

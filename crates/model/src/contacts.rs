@@ -151,7 +151,25 @@ impl ContactBook {
 
 /// The address being typed in a recipient box: the text after the last `,` or `;`.
 pub fn last_token(field: &str) -> &str {
-    field.rsplit([',', ';']).next().unwrap_or("").trim_start()
+    let mut tail = field.rsplit([',', ';']).next().unwrap_or("").trim_start();
+    // Skip any number of complete preceding recipients separated by spaces,
+    // without splitting normal multi-word names such as "Chan Tai Man".
+    loop {
+        if let Some(end) = tail.find('>') {
+            let (before, after) = tail.split_at(end + 1);
+            if before.contains('<') && after.chars().next().is_some_and(char::is_whitespace) {
+                tail = after.trim_start();
+                continue;
+            }
+        }
+        if let Some((first, rest)) = tail.split_once(char::is_whitespace)
+            && crate::addr::is_valid_email(first)
+        {
+            tail = rest.trim_start();
+            continue;
+        }
+        return tail;
+    }
 }
 
 /// `field` with its last, half-typed address replaced by `a` and a separator for the next one.
@@ -291,6 +309,12 @@ mod tests {
         assert_eq!(last_token("Ann <a@x>, zo"), "zo");
         assert_eq!(last_token("zo"), "zo");
         assert_eq!(last_token("a@x; "), "");
+        assert_eq!(last_token("unknown@example.com Alice"), "Alice");
+        assert_eq!(last_token("unknown@example.com Alice Smith"), "Alice Smith");
+        assert_eq!(last_token("bad@example.com next@example.com Chan Tai"), "Chan Tai");
+        assert_eq!(last_token("Alice <alice@example.com> Bob"), "Bob");
+        assert_eq!(last_token("Chan Tai Man"), "Chan Tai Man");
+        assert_eq!(last_token("unknown@example.com; Bob"), "Bob");
         let z = EmailAddress::new("Zoe Park", "zoe@x.example");
         assert_eq!(complete("Ann <a@x>, zo", &z), "Ann <a@x>, Zoe Park <zoe@x.example>, ");
         assert_eq!(complete("zo", &z), "Zoe Park <zoe@x.example>, ");

@@ -471,6 +471,33 @@ impl Session {
         Ok(serde_json::json!({"uid": uid}))
     }
 
+    /// Delete only a contact kept on this computer. Never delete a CardDAV
+    /// contact or an Exchange/LDAP recipient through autocomplete.
+    /// Refuse ambiguous matches across local address books.
+    pub fn delete_local_contact_by_email(&mut self, email: &str) -> CmdResult {
+        let matches: Vec<(String, String)> = self
+            .pim
+            .iter()
+            .flat_map(|(account, p)| {
+                p.cards.iter().filter_map(|c| {
+                    (c.book == LOCAL && c.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(email)))
+                        .then(|| (account.clone(), c.card.uid.clone()))
+                })
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err(CmdError::Disabled("Expected exactly one local contact for this address; edit it in People instead".into()));
+        }
+        let (account, uid) = &matches[0];
+        let Some(p) = self.pim.get_mut(account) else {
+            return Err(CmdError::Params("Local contact account no longer exists".into()));
+        };
+        // Restrict the mutation itself, not just the UI menu or caller.
+        p.cards.retain(|c| !(c.book == LOCAL && c.card.uid == *uid));
+        self.after_pim_change(account, false);
+        Ok(serde_json::json!({"deleted": uid}))
+    }
+
     pub fn delete_card(&mut self, uid: &str) -> CmdResult {
         let account = self.find_person(uid).map(|p| p.account.to_string()).ok_or_else(|| CmdError::Params(format!("no contact `{uid}`")))?;
         if self.person_read_only(uid) {

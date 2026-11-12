@@ -1,0 +1,106 @@
+name: Legacy LDAP compile and tests
+
+on:
+  push:
+    branches: [feature/exchange-legacy-ldap]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ldap-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check net and engine
+        run: cargo check --locked -p mailcraft-net -p mailcraft-engine
+      - name: Check desktop UI crate
+        run: cargo check --locked -p mailcraft-ui-egui
+      - name: Clippy on changed Rust crates
+        run: cargo clippy --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui -- -D warnings
+      - name: Run LDAP and directory unit tests
+        run: |
+          cargo test --locked -p mailcraft-net ldap
+          cargo test --locked -p mailcraft-engine directory
+          cargo test --locked -p mailcraft-ui-egui i18n::tests::every_interface_string_is_translated
+
+  windows-ldap-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt, clippy
+      - name: Parse Windows PowerShell LDAP helper
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "crates/net/src/ldap_windows.ps1").Path, [ref]$tokens, [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) { $parseErrors | Format-List | Out-String | Write-Error; exit 1 }
+      - name: Check persistent helper process IPC and bounded errors
+        shell: pwsh
+        run: |
+          $script = Get-Content crates/net/src/ldap_windows.ps1 -Raw
+          $invalid = '{"host":"","base_dn":"","filter":"(mail=*)","port":389,"limit":5,"schema":"ad"}'
+          $start = [System.Diagnostics.ProcessStartInfo]::new("powershell.exe")
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($arg in @("-NoProfile","-NonInteractive","-Command",$script)) {
+            [void]$start.ArgumentList.Add($arg)
+          }
+          $proc = [System.Diagnostics.Process]::Start($start)
+          $proc.StandardInput.WriteLine($invalid)
+          $proc.StandardInput.WriteLine($invalid)
+          $proc.StandardInput.Close()
+          $line1 = $proc.StandardOutput.ReadLine()
+          $line2 = $proc.StandardOutput.ReadLine()
+          if (-not $proc.WaitForExit(15000)) {
+            $proc.Kill()
+            throw "Persistent LDAP worker did not exit after stdin EOF."
+          }
+          $first = $line1 | ConvertFrom-Json
+          $second = $line2 | ConvertFrom-Json
+          if ($proc.ExitCode -ne 0 -or $first.error -ne 'HelperRuntime' -or $second.error -ne 'HelperRuntime') {
+            throw "The same persistent Windows LDAP worker must answer two separate JSON requests."
+          }
+          Write-Host "Persistent helper protocol: 2 requests, 2 structured responses, 1 process"
+      - name: Verify Unicode JSON survives Windows PowerShell stdout
+        shell: pwsh
+        run: |
+          $unicode = '李定淳'
+          $script = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false,$true); [Console]::Out.WriteLine((ConvertTo-Json -InputObject @{ name = "' + $unicode + '" } -Compress))'
+          $start = [System.Diagnostics.ProcessStartInfo]::new("powershell.exe")
+          $start.UseShellExecute = $false
+          $start.RedirectStandardOutput = $true
+          foreach ($arg in @("-NoProfile","-NonInteractive","-Command",$script)) {
+            [void]$start.ArgumentList.Add($arg)
+          }
+          $proc = [System.Diagnostics.Process]::Start($start)
+          $stream = [System.IO.MemoryStream]::new()
+          $proc.StandardOutput.BaseStream.CopyTo($stream)
+          $proc.WaitForExit()
+          $response = [System.Text.UTF8Encoding]::new($false,$true).GetString($stream.ToArray()) | ConvertFrom-Json
+          if ($proc.ExitCode -ne 0 -or $response.name -ne $unicode) {
+            throw "Windows PowerShell non-ASCII LDAP JSON output was corrupted."
+          }
+      - name: Check Windows native LDAP integration
+        run: cargo check --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui
+      - name: Windows LDAP clippy
+        run: cargo clippy --locked -p mailcraft-net -p mailcraft-engine -p mailcraft-ui-egui -- -D warnings
+      - name: Persistent Windows LDAP worker regression test
+        run: cargo test --locked -p mailcraft-net persistent_windows_helper
+      - name: Windows integrated configuration tests
+        run: cargo test --locked -p mailcraft-engine windows_integrated_ldap

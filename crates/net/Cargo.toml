@@ -49,6 +49,7 @@ hmac = "0.13"
 # Kerberos sign-in for on-premises Exchange (Negotiate, RFC 4559), pure Rust (Devolutions, MIT /
 # Apache-2.0). Without its network client: MailCraft talks to the KDC itself.
 sspi = { version = "0.23.1", default-features = false }
+ldap3 = { version = "0.12.1", default-features = false, features = ["sync", "tls-rustls-ring"] }
 log = { workspace = true }
 thiserror = { workspace = true }
 

@@ -373,6 +373,15 @@ impl Session {
         out
     }
 
+    /// Only cached message participants and saved contacts. Unlike
+    /// `suggest_contacts`, this does NOT schedule an LDAP directory lookup.
+    /// The compose UI debounces the server search separately so intermediate
+    /// keystrokes (ton, tone, toney) do not queue multiple slow LDAP requests.
+    pub fn suggest_local_contacts(&mut self, query: &str, limit: usize) -> Vec<Contact> {
+        self.ensure_contacts();
+        self.contacts.as_ref().map(|b| b.suggest(query, limit, self.clock.now)).unwrap_or_default()
+    }
+
     /// Whether anything was written in the message being written (more than its signature):
     /// closing it then asks whether to keep it.
     pub fn compose_written(&self) -> bool {

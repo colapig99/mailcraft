@@ -1,5 +1,5 @@
 //! An account's worker: searching the organisation's directory (issue #9) on
-//! on-premises Exchange (EWS) and Exchange Online (Graph, with a sign-in of its own).
+//! on-premises Exchange (EWS/LDAP) and Exchange Online (Graph).
 
 use super::*;
 
@@ -7,27 +7,37 @@ impl Worker {
     /// Look `query` up in the account's directory and say who was found.
     pub(super) fn search_directory(&mut self, query: String) {
         let mut consent = false;
-        let r = match &self.conn {
-            Some(Conn::Ews(c)) => c.search_directory(&query),
-            Some(Conn::Graph(_)) => match self.directory_token() {
-                Ok(token) => {
-                    let base = self.acc.graph.clone().unwrap_or_default();
-                    let r = crate::graph::search_directory(&base, &token, &query);
-                    if r.as_ref().is_err_and(crate::graph::needs_consent) {
-                        // Taken away since (an administrator, or the user in their account's
-                        // settings): asked for again.
-                        self.directory_token = None;
-                        consent = true;
+        let r = if let Some(settings) = self.acc.ldap.clone() {
+            // Never reuse the mailbox password for a separate LDAP bind identity.
+            let ldap_secret = if settings.allow_insecure_anonymous || settings.windows_integrated {
+                None // Never even read a password for plaintext LDAP.
+            } else {
+                self.creds.as_ref().and_then(|c| c.get_secret(&self.acc, LDAP_SECRET))
+            };
+            crate::ldap::search_directory(&settings, ldap_secret.as_deref(), &query)
+        } else {
+            match &self.conn {
+                Some(Conn::Ews(c)) => c.search_directory(&query),
+                Some(Conn::Graph(_)) => match self.directory_token() {
+                    Ok(token) => {
+                        let base = self.acc.graph.clone().unwrap_or_default();
+                        let r = crate::graph::search_directory(&base, &token, &query);
+                        if r.as_ref().is_err_and(crate::graph::needs_consent) {
+                            // Taken away since (an administrator, or the user in their account's
+                            // settings): asked for again.
+                            self.directory_token = None;
+                            consent = true;
+                        }
+                        r
                     }
-                    r
-                }
-                Err(e) => {
-                    consent = crate::graph::needs_consent(&e);
-                    Err(e)
-                }
-            },
-            Some(_) => Err(NetError::No("this account has no organisation directory".into())),
-            None => Err(NetError::Closed("not connected".into())),
+                    Err(e) => {
+                        consent = crate::graph::needs_consent(&e);
+                        Err(e)
+                    }
+                },
+                Some(_) => Err(NetError::No("this account has no organisation directory".into())),
+                None => Err(NetError::Closed("not connected".into())),
+            }
         };
         let (people, error) = match r {
             Ok(p) => (p, None),

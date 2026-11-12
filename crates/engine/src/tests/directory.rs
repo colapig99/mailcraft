@@ -239,3 +239,203 @@ fn exchange_online_asks_for_permission_to_search_its_directory() {
     assert!(!s.directory_accounts().contains(&personal));
     done(s);
 }
+
+#[test]
+fn imap_account_can_search_exchange_legacy_ldap_directory() {
+    let mut s = sample_session("ldap-gal");
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.take_jobs();
+    assert!(!s.directory_accounts().contains(&id));
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id,
+            "url": "ldaps://gc.contoso.example:3269",
+            "baseDn": "DC=contoso,DC=example",
+            "bindDn": "legacy@contoso.example",
+            "password": "ldap-test-secret",
+            "schema": "ad"
+        }),
+    )
+    .unwrap();
+    assert!(s.directory_accounts().contains(&id));
+    assert!(s.account(&id).unwrap().config.ldap.is_some());
+    s.take_jobs();
+    s.address_book("directory", "alice");
+    assert_eq!(asked(&mut s), ["alice"]);
+    answer(&mut s, &id, "alice", &[("Alice", "alice@contoso.example")]);
+    assert_eq!(s.suggest_contacts("alice", 8).len(), 1);
+    let saved = std::fs::read_to_string(s.store.as_ref().unwrap().root().join("accounts.json")).unwrap();
+    assert!(saved.contains("gc.contoso.example"));
+    assert!(!saved.contains("ldap-test-secret"));
+    assert!(!saved.contains("\"password\": \"pw\""));
+    s.run("account.ldap", &json!({"account": id, "disable": true})).unwrap();
+    assert!(!s.directory_accounts().contains(&id));
+    done(s);
+}
+
+#[test]
+fn ldap_command_validates_schema_and_tls_settings() {
+    let mut s = sample_session("ldap-validation");
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.take_jobs();
+    for (url, schema) in [("http://localhost/", "ad"), ("ldap://directory.contoso.example:389", "wrong")] {
+        assert!(
+            s.run(
+                "account.ldap",
+                &json!({
+                    "account": id, "url": url, "baseDn": "DC=contoso,DC=example", "schema": schema
+                })
+            )
+            .is_err()
+        );
+    }
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id,
+            "url": "ldaps://ex55.contoso.example:636",
+            "baseDn": "o=Contoso",
+            "schema": "exchange55"
+        }),
+    )
+    .unwrap();
+    assert_eq!(s.account(&id).unwrap().config.ldap.as_ref().unwrap().schema, mailcraft_model::LdapSchema::Exchange55);
+    done(s);
+}
+
+#[test]
+fn legacy_plaintext_ldap_requires_anonymous_bind() {
+    let mut s = sample_session("ldap-plain");
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.take_jobs();
+    let anonymous = json!({
+        "account": id,
+        "url": "ldap://directory.contoso.example:389",
+        "baseDn": "DC=contoso,DC=example",
+        "schema": "ad",
+        "allowInsecureAnonymous": true
+    });
+    s.run("account.ldap", &anonymous).unwrap();
+    let settings = s.account(&id).unwrap().config.ldap.as_ref().unwrap();
+    assert!(settings.allow_insecure_anonymous);
+    assert!(settings.bind_dn.is_none());
+    assert!(
+        s.run(
+            "account.ldap",
+            &json!({
+                "account": id,
+                "bindDn": "cn=administrator,cn=Users,dc=contoso,dc=example",
+                "password": "bad-idea"
+            })
+        )
+        .is_err()
+    );
+    assert!(
+        s.run(
+            "account.ldap",
+            &json!({
+                "account": id,
+                "bindDn": "cn=reader,dc=contoso,dc=example"
+            })
+        )
+        .is_err()
+    );
+    done(s);
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_integrated_ldap_reuses_domain_login_without_bind_password() {
+    let mut s = sample_session("ldap-negotiate");
+    let id = s
+        .run(
+            "account.add",
+            &json!({
+                "email": "legacy@contoso.example",
+                "password": "pw",
+                "imapHost": "mail.contoso.example",
+                "smtpHost": "mail.contoso.example"
+            }),
+        )
+        .unwrap()["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.take_jobs();
+    s.run(
+        "account.ldap",
+        &json!({
+            "account": id, "url": "ldap://gc.contoso.example:389",
+            "baseDn": "DC=contoso,DC=example", "schema": "ad",
+            "windowsIntegrated": true
+        }),
+    )
+    .unwrap();
+    let ldap = s.account(&id).unwrap().config.ldap.as_ref().unwrap();
+    assert!(ldap.windows_integrated);
+    assert!(ldap.bind_dn.is_none());
+    assert!(!ldap.allow_insecure_anonymous);
+    assert!(
+        s.run(
+            "account.ldap",
+            &json!({
+                "account": id, "bindDn": "cn=administrator,dc=contoso,dc=example"
+            })
+        )
+        .is_err()
+    );
+    done(s);
+}
+
+#[test]
+fn local_recipient_suggestions_do_not_queue_directory_prefixes() {
+    let mut s = sample_session("recipient-debounce");
+    let _id = exchange(&mut s, None);
+    for query in ["ton", "tone", "toney"] {
+        let _ = s.suggest_local_contacts(query, 8);
+    }
+    assert!(asked(&mut s).is_empty(), "typing prefixes must not flood the LDAP server");
+    s.address_book("directory", "toney");
+    assert_eq!(asked(&mut s), ["toney"], "only the settled recipient query is sent");
+    done(s);
+}

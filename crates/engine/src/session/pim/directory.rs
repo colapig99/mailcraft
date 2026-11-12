@@ -48,7 +48,9 @@ impl Session {
             .iter()
             .filter(|a| {
                 let c = &a.config;
-                c.ews.is_some() || (c.graph.is_some() && !mailcraft_model::microsoft_consumer(c.oauth_user.as_deref().unwrap_or(&c.email)))
+                c.ldap.is_some()
+                    || c.ews.is_some()
+                    || (c.graph.is_some() && !mailcraft_model::microsoft_consumer(c.oauth_user.as_deref().unwrap_or(&c.email)))
             })
             .map(|a| a.config.id.clone())
             .collect()
@@ -206,10 +208,18 @@ impl Session {
     pub fn refresh_directory(&mut self) -> CmdResult {
         self.directory.answers.clear();
         self.directory.rev = self.directory.rev.wrapping_add(1);
-        let exchange: Vec<String> =
-            self.accounts.iter().filter(|a| a.config.ews.is_some() || a.config.graph.is_some()).map(|a| a.config.id.clone()).collect();
+        let exchange: Vec<String> = self
+            .accounts
+            .iter()
+            .filter(|a| a.config.ldap.is_some() || a.config.ews.is_some() || a.config.graph.is_some())
+            .map(|a| a.config.id.clone())
+            .collect();
+        // A GAL-only LDAP source has no CardDAV sync to trigger. The next
+        // autocomplete lookup refreshes it after its cached answers were cleared.
         for account in &exchange {
-            self.jobs.push(Job::SyncDav { account: account.clone() });
+            if self.account(account).is_some_and(|a| a.config.ews.is_some() || a.config.graph.is_some()) {
+                self.jobs.push(Job::SyncDav { account: account.clone() });
+            }
         }
         Ok(serde_json::json!({"refreshed": exchange}))
     }

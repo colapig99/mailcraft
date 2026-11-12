@@ -272,6 +272,10 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             s.delete_card(&uid)
         })
         .params(r#"{"uid": string}"#),
+        CommandSpec::new("contact.deleteLocalByEmail", "Delete local contact", "Message › Recipient suggestions", |s, v| {
+            s.delete_local_contact_by_email(p::req_str(v, "email")?)
+        })
+        .params(r#"{"email": string (a unique contact in a local-only address book)}"#),
         CommandSpec::new("contact.fromMessage", "Add sender to contacts", "Reading pane", |s, _| {
             let from = s.reading.as_ref().and_then(|r| r.parsed.as_ref()).map(|p| p.from.clone()).ok_or_else(|| CmdError::Disabled("open a message first".into()))?;
             if let Some(existing) = s.people(&from.email).into_iter().find(|x| x.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(&from.email))) {

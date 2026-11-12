@@ -23,6 +23,7 @@ mod exchange;
 #[cfg(test)]
 mod fakes;
 pub mod http;
+pub mod ldap;
 pub mod oauth;
 mod protocols;
 pub mod stream;

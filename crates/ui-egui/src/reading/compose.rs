@@ -183,6 +183,9 @@ pub(super) fn recipient_field(
     hint: &str,
     focus: bool,
     suggestions: &[Contact],
+    sources: &[&'static str],
+    local_deletable: &[bool],
+    delete_key: egui::Id,
 ) -> bool {
     let t = st.tokens;
     let showing = st.suggest_field == Some(name) && !suggestions.is_empty();
@@ -238,6 +241,15 @@ pub(super) fn recipient_field(
         }
     }
     if r.changed() {
+        let separated = addr::separate_recipient_emails(value);
+        if *value != separated {
+            *value = separated;
+            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
+                let end = egui::text::CCursor::new(value.chars().count());
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+                state.store(ui.ctx(), r.id);
+            }
+        }
         st.suggest_index = 0;
         st.suggest_dismissed = None;
     }
@@ -249,13 +261,12 @@ pub(super) fn recipient_field(
                 // As wide as the longest suggestion (within the box's width), every row taking
                 // a click anywhere on it: the name, and the address dimmer beside it.
                 let name_font = theme::regular(13.5);
-                let mail_font = theme::regular(12.5);
                 let text_w = |text: &str, font: &egui::FontId| ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), t.text).size().x);
                 let widest = suggestions
                     .iter()
                     .map(|c| {
-                        let name = if c.address.name.is_empty() { 0.0 } else { text_w(&c.address.name, &name_font) + 12.0 };
-                        name + text_w(&c.address.email, &mail_font)
+                        let display = if c.address.name.trim().is_empty() { &c.address.email } else { &c.address.name };
+                        text_w(display, &name_font) + 82.0
                     })
                     .fold(0.0_f32, f32::max);
                 let w = (widest + 24.0).clamp(200.0, r.rect.width().clamp(200.0, 520.0));
@@ -263,19 +274,31 @@ pub(super) fn recipient_field(
                 for (i, c) in suggestions.iter().enumerate() {
                     let on = i == st.suggest_index;
                     let (row, resp) = ui.allocate_exact_size(vec2(w, 28.0), egui::Sense::click());
+                    let resp = resp.on_hover_text(&c.address.email);
+                    resp.context_menu(|ui| {
+                        if ui.button("Copy email address").clicked() {
+                            ui.ctx().copy_text(c.address.email.clone());
+                            ui.close();
+                        }
+                        if local_deletable.get(i).copied().unwrap_or(false) && ui.button("Delete local contact…").clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(delete_key, c.address.email.clone()));
+                            ui.close();
+                        }
+                    });
                     if on || resp.hovered() {
                         ui.painter().rect_filled(row, 4.0, if on { t.accent_soft } else { t.hover_row });
                     }
-                    let clip = ui.painter().with_clip_rect(row.shrink2(vec2(8.0, 0.0)));
-                    let mut x = row.left() + 10.0;
-                    if !c.address.name.is_empty() {
-                        let g = clip.layout_no_wrap(c.address.name.clone(), name_font.clone(), t.text);
-                        let gw = g.size().x;
-                        clip.galley(egui::pos2(x, row.center().y - g.size().y / 2.0), g, t.text);
-                        x += gw + 12.0;
+                    let clip = ui.painter().with_clip_rect(egui::Rect::from_min_max(row.min + vec2(8.0, 0.0), row.max - vec2(76.0, 0.0)));
+                    // A source is not a domain-name heuristic: it comes from
+                    // the real Directory, saved Contacts, or message-history set.
+                    if let Some(source) = sources.get(i) {
+                        ui.painter().text(row.right_center() - vec2(8.0, 0.0), egui::Align2::RIGHT_CENTER, *source, theme::regular(10.5), t.faint);
                     }
-                    let g = clip.layout_no_wrap(c.address.email.clone(), mail_font.clone(), t.dim);
-                    clip.galley(egui::pos2(x, row.center().y - g.size().y / 2.0), g, t.dim);
+                    // The directory's display name already contains English (Chinese)
+                    // when available. Never invent a name from the email local part.
+                    let display = if c.address.name.trim().is_empty() { &c.address.email } else { &c.address.name };
+                    let g = clip.layout_no_wrap(display.to_string(), name_font.clone(), t.text);
+                    clip.galley(egui::pos2(row.left() + 10.0, row.center().y - g.size().y / 2.0), g, t.text);
                     // On press: the box loses focus on the same click, before a release would count.
                     if resp.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
                         take = Some(i);
@@ -325,6 +348,21 @@ pub fn compose_window(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
 }
 
 pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut Vec<Action>, in_window: bool) {
+    if let Some(id) = s.compose.as_ref().map(|c| c.id)
+        && st.suggest_owner != Some(id)
+    {
+        // Several compose windows share UiState. Save and restore autocomplete
+        // focus separately so opening another draft never inherits stale state.
+        if let Some(old) = st.suggest_owner {
+            st.suggest_by_compose.insert(old, (st.suggest_field, st.suggest_index, st.suggest_dismissed.take(), st.suggest_refocus));
+        }
+        let (field, index, dismissed, refocus) = st.suggest_by_compose.remove(&id).unwrap_or((None, 0, None, None));
+        st.suggest_field = field;
+        st.suggest_index = index;
+        st.suggest_dismissed = dismissed;
+        st.suggest_refocus = refocus;
+        st.suggest_owner = Some(id);
+    }
     let t = st.tokens;
     attach_dropped(ui, &t, acts);
     // Where there are no windows of their own (the browser), the other messages being written
@@ -348,8 +386,67 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         .filter(|a| a.config.id == from || s.send_block(&a.config.id).is_none())
         .map(|a| (a.config.id.clone(), EmailAddress::new(a.config.name.clone(), a.config.email.clone()).to_string()))
         .collect();
-    // Suggestions for the recipient box being typed in (computed before the form borrows it).
-    let suggestions: Vec<Contact> = match (st.suggest_field, s.compose.as_ref()) {
+    // Keep the mode per compose message and window; a different message should not
+    // inherit a potentially restrictive GAL-only setting. Default is mixed.
+    let gal_mode_id = ui.make_persistent_id(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
+    let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
+    let has_directory = !s.directory_accounts().is_empty();
+    let delete_key = ui.make_persistent_id(("delete-local-contact-suggestion", s.compose.as_ref().map(|c| c.id)));
+    if let Some(email) = ui.ctx().data(|d| d.get_temp::<String>(delete_key)) {
+        egui::Window::new("Delete local contact?").id(delete_key.with("confirm")).collapsible(false).resizable(false).show(ui.ctx(), |ui| {
+            ui.label(format!("Delete the local contact containing {email}?"));
+            ui.label("This does not delete mail, GAL entries or server contacts.");
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                }
+                if ui.button("Delete local contact").clicked() {
+                    acts.push(Action::Run("contact.deleteLocalByEmail", json!({"email": email})));
+                    ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                }
+            });
+        });
+    }
+    // Keep the user's active lookup visible rather than treating a pending or
+    // rejected directory query as proof that the person is absent from the GAL.
+    let active_lookup = s.compose.as_ref().and_then(|c| {
+        st.suggest_field.map(|field| {
+            let value = match field {
+                "to" => &c.to,
+                "cc" => &c.cc,
+                _ => &c.bcc,
+            };
+            mailcraft_engine::model::contacts::last_token(value).trim().to_owned()
+        })
+    });
+
+    // Issue the LDAP search only after 350 ms of typing inactivity: the PDC
+    // must not queue every intermediate name prefix on a slow connection.
+    let query_ready = if let Some(query) = active_lookup.as_deref().filter(|q| q.chars().count() >= 3) {
+        let key = ui.make_persistent_id(("compose-gal-query", s.compose.as_ref().map(|c| c.id)));
+        let now = ui.ctx().input(|i| i.time);
+        let ready = ui.ctx().data_mut(|d| {
+            let previous = d.get_temp::<(String, f64)>(key);
+            if let Some((old, changed_at)) = previous
+                && old == query
+            {
+                now - changed_at >= 0.35
+            } else {
+                d.insert_temp(key, (query.to_owned(), now));
+                false
+            }
+        });
+        if !ready {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
+        }
+        ready
+    } else {
+        false
+    };
+
+    // Suggestions for the active recipient box, computed before borrowing compose.
+    // Only the debounced query may schedule a new LDAP search.
+    let (suggestions, suggestion_sources): (Vec<Contact>, Vec<&'static str>) = match (st.suggest_field, s.compose.as_ref()) {
         (Some(f), Some(c)) => {
             let text = match f {
                 "to" => c.to.clone(),
@@ -358,14 +455,70 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
             };
             let token = mailcraft_engine::model::contacts::last_token(&text).to_string();
             if token.chars().count() < 1 || st.suggest_dismissed.as_deref() == Some(text.as_str()) {
-                Vec::new()
+                (Vec::new(), Vec::new())
             } else {
                 let present = text.to_lowercase();
-                s.suggest_contacts(&token, 8).into_iter().filter(|x| !present.contains(&x.address.email.to_lowercase())).take(6).collect()
+                let directory = if query_ready { s.address_book("directory", &token) } else { Vec::new() };
+                let saved = if gal_only { Vec::new() } else { s.address_book("people", &token) };
+                let mut candidates: Vec<Contact> = if gal_only { Vec::new() } else { s.suggest_local_contacts(&token, 8) };
+                for address in &directory {
+                    if let Some(existing) = candidates.iter_mut().find(|c| c.address.email.eq_ignore_ascii_case(&address.email)) {
+                        if !address.name.is_empty() {
+                            existing.address.name.clone_from(&address.name);
+                        }
+                    } else {
+                        candidates.push(Contact { address: address.clone(), ..Default::default() });
+                    }
+                }
+                // When the directory finishes, confirmed GAL entries should not
+                // be buried under an entire screen of historical mail senders.
+                candidates.sort_by_key(|c| {
+                    if directory.iter().any(|d| d.email.eq_ignore_ascii_case(&c.address.email)) {
+                        0
+                    } else if saved.iter().any(|p| p.email.eq_ignore_ascii_case(&c.address.email)) {
+                        1
+                    } else {
+                        2
+                    }
+                });
+                let candidates: Vec<Contact> =
+                    candidates.into_iter().filter(|c| !present.contains(&c.address.email.to_lowercase())).take(6).collect();
+                let pending = (has_directory && !query_ready && token.chars().count() >= 3) || s.directory_pending(&token);
+                let sources = candidates
+                    .iter()
+                    .map(|c| {
+                        if directory.iter().any(|d| d.email.eq_ignore_ascii_case(&c.address.email)) {
+                            "GAL"
+                        } else if saved.iter().any(|p| p.email.eq_ignore_ascii_case(&c.address.email)) {
+                            "Contacts"
+                        } else if pending {
+                            // A pending GAL request cannot yet rule out that a
+                            // history result is also a directory entry.
+                            "Checking"
+                        } else {
+                            // The mail index includes inbound senders. It does NOT
+                            // mean the user recently contacted the person.
+                            "Mail"
+                        }
+                    })
+                    .collect();
+                (candidates, sources)
             }
         }
-        _ => Vec::new(),
+        _ => (Vec::new(), Vec::new()),
     };
+    // Right-click deletion is available only for an actual local-only card.
+    // Do not expose it for a matching CardDAV contact or a GAL result.
+    let local_deletable: Vec<bool> = suggestions
+        .iter()
+        .zip(&suggestion_sources)
+        .map(|(c, source)| {
+            *source == "Contacts"
+                && s.people(&c.address.email).iter().any(|p| {
+                    p.book == mailcraft_engine::model::pim::LOCAL && p.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(&c.address.email))
+                })
+        })
+        .collect();
     let clock = s.clock;
     // Delay Delivery holds mail in the Outbox, which only a server account's sends from.
     let can_delay = s.compose.as_ref().and_then(|c| s.account(&c.account)).is_some_and(|a| !a.is_local());
@@ -644,9 +797,60 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                 "cc" => &mut c.cc,
                                 _ => &mut c.bcc,
                             };
-                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions) {
+                            if recipient_field(
+                                ui,
+                                st,
+                                name,
+                                label,
+                                value,
+                                hint,
+                                name == "to" && focus_to,
+                                &suggestions,
+                                &suggestion_sources,
+                                &local_deletable,
+                                delete_key,
+                            ) {
                                 let d = crate::Dialog::select_names(c, name);
                                 acts.push(Action::Dialog(d));
+                            }
+                        }
+                        // This is a search scope, not a sending restriction: the
+                        // user can always type any valid SMTP address manually.
+                        if has_directory {
+                            ui.horizontal(|ui| {
+                                ui.add_space(LABEL_W - 8.0);
+                                let mut enabled = gal_only;
+                                if ui
+                                    .checkbox(&mut enabled, "GAL only")
+                                    .on_hover_text(
+                                        "Suggest only addresses returned by the company directory. Other addresses may still be typed manually.",
+                                    )
+                                    .changed()
+                                {
+                                    ui.ctx().data_mut(|d| d.insert_temp(gal_mode_id, enabled));
+                                    st.suggest_index = 0;
+                                    st.suggest_dismissed = None;
+                                }
+                            });
+                            if gal_only && let Some(query) = active_lookup.as_deref().filter(|q| !q.is_empty()) {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(LABEL_W - 8.0);
+                                    let errors = s.directory_errors(query);
+                                    let message = if query.chars().count() < 3 {
+                                        "Enter at least 3 characters to search GAL".to_owned()
+                                    } else if !query_ready || s.directory_pending(query) {
+                                        "Searching GAL…".to_owned()
+                                    } else if let Some(reason) = errors.first() {
+                                        format!("GAL query failed: {reason}")
+                                    } else if suggestions.is_empty() {
+                                        "No GAL results for this spelling; try name or email alias".to_owned()
+                                    } else {
+                                        String::new()
+                                    };
+                                    if !message.is_empty() {
+                                        ui.label(RichText::new(message).small().color(t.dim));
+                                    }
+                                });
                             }
                         }
                     });

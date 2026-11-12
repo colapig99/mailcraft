@@ -405,6 +405,14 @@ fn info(s: &Session, t: &Tokens, has_files: bool, ui: &mut Ui, b: &mut Backstage
                 }
             });
         }
+        if !cfg!(target_arch = "wasm32") && !a.is_local() && a.config.graph.is_none() {
+            let status = if a.config.ldap.is_some() { "LDAP GAL configured" } else { "Configure Exchange 5.5/2003 GAL lookup" };
+            setting_row(ui, t, false, name(t, "Enterprise directory (LDAP)"), Some(note(t, status)), |ui| {
+                if ui.button("LDAP directory…").clicked() {
+                    acts.push(Action::Dialog(Dialog::Ldap(crate::dialogs::LdapForm::of(&a.config))));
+                }
+            });
+        }
         setting_row(ui, t, false, name(t, tl!("Signature")), None, |ui| {
             if ui.button(tl!("Signature…")).clicked() {
                 acts.push(Action::EditSignature { account: id.clone(), insert: false });

@@ -477,6 +477,7 @@ impl Session {
             || a.config.shared_mailboxes != config.shared_mailboxes
             || a.config.online_only != config.online_only
             || a.config.dav != config.dav
+            || a.config.ldap != config.ldap
             || a.config.user_agent != config.user_agent
             || password.is_some();
         if config.online_only && !config.can_be_online_only() {

@@ -91,6 +91,9 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         CommandSpec::new("account.dav", "Calendars and contacts", "File › Info › Account settings", set_dav).params(
             r#"{"account": string, "caldav"?: string (the calendar server's address: its own, the home, or one calendar; empty: found from the account's address), "carddav"?: string (the same for contacts), "username"?: string|null (its own sign-in; null: as the mail server), "password"?: string}"#,
         ),
+        CommandSpec::new("account.ldap", "LDAP enterprise directory", "File › Info › Account settings", set_ldap).params(
+            r#"{"account": string, "url"?: string (ldaps:// or ldap://), "baseDn"?: string, "bindDn"?: string|null, "schema"?: "exchange55"|"ad", "password"?: string (separate LDAP keychain secret), "windowsIntegrated"?: bool (Windows current domain identity, signing+sealing), "allowInsecureAnonymous"?: bool (anonymous only), "disable"?: bool}"#,
+        ),
         CommandSpec::new("account.list", "Accounts", "File › Accounts", list_accounts),
         // Asks where MailCraft is published; File › About shows the answer (`Session::update`).
         CommandSpec::new("app.checkUpdates", "Check for updates", "File › About", |s, _| {
@@ -236,6 +239,7 @@ pub(super) fn add_account(s: &mut Session, v: &Value) -> CmdResult {
         shared_mailboxes: Vec::new(),
         online_only: p::bool(v, "onlineOnly").unwrap_or(false),
         dav: None,
+        ldap: None,
         user_agent,
     };
     // A line break or tab pasted in with the user name: no server would ever take it (in an
@@ -401,6 +405,96 @@ pub(super) fn set_dav(s: &mut Session, v: &Value) -> CmdResult {
     s.set_dav(id, &caldav, &carddav, username.as_deref(), p::str(v, "password"))
 }
 
+/// Configure a read-only LDAP GAL provider without storing an LDAP password.
+fn set_ldap(s: &mut Session, v: &Value) -> CmdResult {
+    let id = p::req_str(v, "account")?;
+    let mut config = s.account(id).map(|a| a.config.clone()).ok_or_else(|| CmdError::Params(format!("no account `{id}`")))?;
+    if config.is_local() {
+        return Err(CmdError::Params("local accounts cannot search an LDAP server".into()));
+    }
+    let previous_bind = config.ldap.as_ref().and_then(|l| l.bind_dn.clone());
+    let mut delete_password = p::bool(v, "disable") == Some(true);
+    if delete_password {
+        config.ldap = None;
+    } else {
+        let mut ldap = config.ldap.clone().unwrap_or_default();
+        if let Some(url) = p::str(v, "url") {
+            ldap.url = url.trim().to_string();
+        }
+        if let Some(dn) = p::str(v, "baseDn") {
+            ldap.base_dn = dn.trim().to_string();
+        }
+        if let Some(dn) = v.get("bindDn") {
+            ldap.bind_dn = dn.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        }
+        if let Some(allow) = p::bool(v, "allowInsecureAnonymous") {
+            ldap.allow_insecure_anonymous = allow;
+        }
+        if let Some(integrated) = p::bool(v, "windowsIntegrated") {
+            ldap.windows_integrated = integrated;
+        }
+        if let Some(schema) = p::str(v, "schema") {
+            ldap.schema = match schema {
+                "exchange55" => mailcraft_model::LdapSchema::Exchange55,
+                "ad" => mailcraft_model::LdapSchema::ActiveDirectory,
+                _ => return Err(CmdError::Params("LDAP schema must be exchange55 or ad".into())),
+            };
+        }
+        if !ldap.url.starts_with("ldaps://") && !ldap.url.starts_with("ldap://") {
+            return Err(CmdError::Params("LDAP URL must start with ldaps:// or ldap://".into()));
+        }
+        let endpoint = ldap.url.strip_prefix("ldaps://").or_else(|| ldap.url.strip_prefix("ldap://")).unwrap_or("");
+        if endpoint.is_empty()
+            || endpoint.chars().any(|ch| matches!(ch, '/' | '?' | '#' | '@'))
+            || ldap.url.len() > 512
+            || ldap.url.chars().any(char::is_whitespace)
+            || ldap.base_dn.is_empty()
+            || ldap.base_dn.len() > 1024
+            || ldap.bind_dn.as_ref().is_some_and(|s| s.len() > 1024)
+        {
+            return Err(CmdError::Params("invalid LDAP URL, Base DN, or Bind DN".into()));
+        }
+        // Changing the directory account invalidates its previously stored password.
+        if previous_bind != ldap.bind_dn {
+            delete_password = true;
+        }
+        if ldap.bind_dn.is_some() && p::str(v, "password").is_none() && delete_password {
+            return Err(CmdError::Params("new LDAP Bind DN requires its own LDAP password".into()));
+        }
+        if ldap.windows_integrated {
+            if !cfg!(windows)
+                || !ldap.url.starts_with("ldap://")
+                || ldap.allow_insecure_anonymous
+                || ldap.bind_dn.is_some()
+                || p::str(v, "password").is_some_and(|s| !s.is_empty())
+            {
+                return Err(CmdError::Params(
+                    "Windows Integrated LDAP requires Windows, ldap://, and no Bind DN, password, or anonymous mode".into(),
+                ));
+            }
+            delete_password = true;
+        }
+        if ldap.allow_insecure_anonymous {
+            if !ldap.url.starts_with("ldap://") || ldap.bind_dn.is_some() || p::str(v, "password").is_some_and(|s| !s.is_empty()) {
+                return Err(CmdError::Params("unencrypted LDAP may only search anonymously, with no Bind DN or password".into()));
+            }
+            delete_password = true;
+        }
+        config.ldap = Some(ldap);
+    }
+    let ldap_password = p::str(v, "password").filter(|s| !s.is_empty()).map(str::to_string);
+    if ldap_password.is_some() && config.ldap.as_ref().and_then(|l| l.bind_dn.as_ref()).is_none() {
+        return Err(CmdError::Params("an LDAP Bind DN is required when setting a directory password".into()));
+    }
+    let updated = s.update_account(config.clone(), None)?;
+    if delete_password || ldap_password.is_some() {
+        s.push_job(mailcraft_model::Job::LdapPassword { account: config, password: mailcraft_model::job::Secret(ldap_password.unwrap_or_default()) });
+    }
+    s.directory.answers.clear();
+    s.directory.rev = s.directory.rev.wrapping_add(1);
+    Ok(updated)
+}
+
 pub(super) fn list_accounts(s: &mut Session, _: &Value) -> CmdResult {
     Ok(json!(s
         .accounts
@@ -412,6 +506,7 @@ pub(super) fn list_accounts(s: &mut Session, _: &Value) -> CmdResult {
             "graph": a.config.graph,
             "pop": a.config.pop.as_ref().map(|p| format!("{}:{} ({})", p.host, p.port, p.security.code())),
             "ews": a.config.ews,
+            "ldap": a.config.ldap,
             "userAgent": a.config.user_agent,
             "imap": format!("{}:{} ({})", a.config.imap.host, a.config.imap.port, a.config.imap.security.code()),
             "smtp": format!("{}:{} ({})", a.config.smtp.host, a.config.smtp.port, a.config.smtp.security.code()),
