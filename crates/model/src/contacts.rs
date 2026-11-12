@@ -151,7 +151,22 @@ impl ContactBook {
 
 /// The address being typed in a recipient box: the text after the last `,` or `;`.
 pub fn last_token(field: &str) -> &str {
-    field.rsplit([',', ';']).next().unwrap_or("").trim_start()
+    let tail = field.rsplit([',', ';']).next().unwrap_or("").trim_start();
+    // A pasted, complete address followed by whitespace starts a new lookup,
+    // even if the user did not type a comma or semicolon.
+    // Do not split ordinary multi-word names such as "Chan Tai Man".
+    if let Some(end) = tail.find('>') {
+        let (before, after) = tail.split_at(end + 1);
+        if before.contains('<') && !after.is_empty() && after.chars().next().is_some_and(char::is_whitespace) {
+            return after.trim_start();
+        }
+    }
+    if let Some((first, rest)) = tail.split_once(char::is_whitespace) {
+        if crate::addr::is_valid_email(first) {
+            return rest.trim_start();
+        }
+    }
+    tail
 }
 
 /// `field` with its last, half-typed address replaced by `a` and a separator for the next one.
@@ -291,6 +306,11 @@ mod tests {
         assert_eq!(last_token("Ann <a@x>, zo"), "zo");
         assert_eq!(last_token("zo"), "zo");
         assert_eq!(last_token("a@x; "), "");
+        assert_eq!(last_token("unknown@example.com Alice"), "Alice");
+        assert_eq!(last_token("unknown@example.com Alice Smith"), "Alice Smith");
+        assert_eq!(last_token("Alice <alice@example.com> Bob"), "Bob");
+        assert_eq!(last_token("Chan Tai Man"), "Chan Tai Man");
+        assert_eq!(last_token("unknown@example.com; Bob"), "Bob");
         let z = EmailAddress::new("Zoe Park", "zoe@x.example");
         assert_eq!(complete("Ann <a@x>, zo", &z), "Ann <a@x>, Zoe Park <zoe@x.example>, ");
         assert_eq!(complete("zo", &z), "Zoe Park <zoe@x.example>, ");
