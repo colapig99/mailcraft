@@ -471,6 +471,23 @@ impl Session {
         Ok(serde_json::json!({"uid": uid}))
     }
 
+    /// Delete only a contact kept on this computer. Never delete a CardDAV
+    /// contact or an Exchange/LDAP recipient through autocomplete.
+    /// Refuse ambiguous matches across local address books.
+    pub fn delete_local_contact_by_email(&mut self, email: &str) -> CmdResult {
+        let matches: Vec<String> = self
+            .pim
+            .values()
+            .flat_map(|p| p.cards.iter())
+            .filter(|c| c.book == LOCAL && c.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(email)))
+            .map(|c| c.card.uid.clone())
+            .collect();
+        if matches.len() != 1 {
+            return Err(CmdError::Disabled("Expected exactly one local contact for this address; edit it in People instead".into()));
+        }
+        self.delete_card(&matches[0])
+    }
+
     pub fn delete_card(&mut self, uid: &str) -> CmdResult {
         let account = self.find_person(uid).map(|p| p.account.to_string()).ok_or_else(|| CmdError::Params(format!("no contact `{uid}`")))?;
         if self.person_read_only(uid) {
