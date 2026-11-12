@@ -8,6 +8,10 @@ on:
       - 'crates/net/src/ldap.rs'
       - 'crates/net/src/ldap_windows.ps1'
       - 'crates/engine/src/session/mailboxes.rs'
+      - 'crates/engine/src/session/pim.rs'
+      - 'crates/engine/src/cmd/pim.rs'
+      - 'crates/model/src/contacts.rs'
+      - 'crates/engine/src/tests/calendar/pim.rs'
       - 'crates/ui-egui/src/dialogs/ldap.rs'
       - 'crates/ui-egui/src/reading/compose.rs'
   workflow_dispatch:
