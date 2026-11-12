@@ -172,8 +172,14 @@ mod tests {
     #[test]
     fn whitespace_between_complete_recipients_is_a_separator() {
         assert_eq!(separate_recipient_emails("one@example.com two@example.com"), "one@example.com; two@example.com");
-        assert_eq!(separate_recipient_emails("one@example.com two@example.com three@example.com"), "one@example.com; two@example.com; three@example.com");
-        assert_eq!(separate_recipient_emails("Dennis Lam <dennis@example.com> Velen Kwong <velen@example.com>"), "Dennis Lam <dennis@example.com>; Velen Kwong <velen@example.com>");
+        assert_eq!(
+            separate_recipient_emails("one@example.com two@example.com three@example.com"),
+            "one@example.com; two@example.com; three@example.com"
+        );
+        assert_eq!(
+            separate_recipient_emails("Dennis Lam <dennis@example.com> Velen Kwong <velen@example.com>"),
+            "Dennis Lam <dennis@example.com>; Velen Kwong <velen@example.com>"
+        );
         assert_eq!(separate_recipient_emails("Chan Tai Man"), "Chan Tai Man");
         assert_eq!(separate_recipient_emails("incomplete@ another@example.com"), "incomplete@ another@example.com");
         assert_eq!(parse_list(&separate_recipient_emails("one@example.com two@example.com")).unwrap().len(), 2);
