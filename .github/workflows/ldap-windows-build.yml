@@ -11,6 +11,7 @@ on:
       - 'crates/engine/src/session/pim.rs'
       - 'crates/engine/src/cmd/pim.rs'
       - 'crates/model/src/contacts.rs'
+      - 'crates/model/src/addr.rs'
       - 'crates/engine/src/tests/calendar/pim.rs'
       - 'crates/ui-egui/src/dialogs/ldap.rs'
       - 'crates/ui-egui/src/reading/compose.rs'
