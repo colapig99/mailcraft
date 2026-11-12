@@ -288,7 +288,7 @@ pub(super) fn recipient_field(
                     // The directory's display name already contains English (Chinese)
                     // when available. Never invent a name from the email local part.
                     let display = if c.address.name.trim().is_empty() { &c.address.email } else { &c.address.name };
-                    let g = clip.layout_no_wrap(display.clone(), name_font.clone(), t.text);
+                    let g = clip.layout_no_wrap(display.to_string(), name_font.clone(), t.text);
                     clip.galley(egui::pos2(row.left() + 10.0, row.center().y - g.size().y / 2.0), g, t.text);
                     // On press: the box loses focus on the same click, before a release would count.
                     if resp.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
