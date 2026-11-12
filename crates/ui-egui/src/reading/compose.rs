@@ -184,6 +184,8 @@ pub(super) fn recipient_field(
     focus: bool,
     suggestions: &[Contact],
     sources: &[&'static str],
+    local_deletable: &[bool],
+    delete_key: egui::Id,
 ) -> bool {
     let t = st.tokens;
     let showing = st.suggest_field == Some(name) && !suggestions.is_empty();
@@ -250,13 +252,12 @@ pub(super) fn recipient_field(
                 // As wide as the longest suggestion (within the box's width), every row taking
                 // a click anywhere on it: the name, and the address dimmer beside it.
                 let name_font = theme::regular(13.5);
-                let mail_font = theme::regular(12.5);
                 let text_w = |text: &str, font: &egui::FontId| ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), t.text).size().x);
                 let widest = suggestions
                     .iter()
                     .map(|c| {
-                        let name = if c.address.name.is_empty() { 0.0 } else { text_w(&c.address.name, &name_font) + 12.0 };
-                        name + text_w(&c.address.email, &mail_font) + 82.0
+                        let display = if c.address.name.trim().is_empty() { &c.address.email } else { &c.address.name };
+                        text_w(display, &name_font) + 82.0
                     })
                     .fold(0.0_f32, f32::max);
                 let w = (widest + 24.0).clamp(200.0, r.rect.width().clamp(200.0, 520.0));
@@ -264,6 +265,17 @@ pub(super) fn recipient_field(
                 for (i, c) in suggestions.iter().enumerate() {
                     let on = i == st.suggest_index;
                     let (row, resp) = ui.allocate_exact_size(vec2(w, 28.0), egui::Sense::click());
+                    let resp = resp.on_hover_text(&c.address.email);
+                    resp.context_menu(|ui| {
+                        if ui.button("Copy email address").clicked() {
+                            ui.ctx().copy_text(c.address.email.clone());
+                            ui.close();
+                        }
+                        if local_deletable.get(i).copied().unwrap_or(false) && ui.button("Delete local contact…").clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(delete_key, c.address.email.clone()));
+                            ui.close();
+                        }
+                    });
                     if on || resp.hovered() {
                         ui.painter().rect_filled(row, 4.0, if on { t.accent_soft } else { t.hover_row });
                     }
@@ -273,15 +285,11 @@ pub(super) fn recipient_field(
                     if let Some(source) = sources.get(i) {
                         ui.painter().text(row.right_center() - vec2(8.0, 0.0), egui::Align2::RIGHT_CENTER, *source, theme::regular(10.5), t.faint);
                     }
-                    let mut x = row.left() + 10.0;
-                    if !c.address.name.is_empty() {
-                        let g = clip.layout_no_wrap(c.address.name.clone(), name_font.clone(), t.text);
-                        let gw = g.size().x;
-                        clip.galley(egui::pos2(x, row.center().y - g.size().y / 2.0), g, t.text);
-                        x += gw + 12.0;
-                    }
-                    let g = clip.layout_no_wrap(c.address.email.clone(), mail_font.clone(), t.dim);
-                    clip.galley(egui::pos2(x, row.center().y - g.size().y / 2.0), g, t.dim);
+                    // The directory's display name already contains English (Chinese)
+                    // when available. Never invent a name from the email local part.
+                    let display = if c.address.name.trim().is_empty() { &c.address.email } else { &c.address.name };
+                    let g = clip.layout_no_wrap(display.clone(), name_font.clone(), t.text);
+                    clip.galley(egui::pos2(row.left() + 10.0, row.center().y - g.size().y / 2.0), g, t.text);
                     // On press: the box loses focus on the same click, before a release would count.
                     if resp.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
                         take = Some(i);
@@ -359,6 +367,26 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
     let gal_mode_id = ui.make_persistent_id(("compose-gal-only", s.compose.as_ref().map(|c| c.id)));
     let gal_only = ui.ctx().data(|d| d.get_temp::<bool>(gal_mode_id)).unwrap_or(false);
     let has_directory = !s.directory_accounts().is_empty();
+    let delete_key = ui.make_persistent_id(("delete-local-contact-suggestion", s.compose.as_ref().map(|c| c.id)));
+    if let Some(email) = ui.ctx().data(|d| d.get_temp::<String>(delete_key)) {
+        egui::Window::new("Delete local contact?")
+            .id(delete_key.with("confirm"))
+            .collapsible(false)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                ui.label(format!("Delete the local contact containing {email}?"));
+                ui.label("This does not delete mail, GAL entries or server contacts.");
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                    }
+                    if ui.button("Delete local contact").clicked() {
+                        acts.push(Action::Run("contact.deleteLocalByEmail", json!({"email": email})));
+                        ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                    }
+                });
+            });
+    }
     // Keep the user's active lookup visible rather than treating a pending or
     // rejected directory query as proof that the person is absent from the GAL.
     let active_lookup = s.compose.as_ref().and_then(|c| {
@@ -459,6 +487,14 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
         }
         _ => (Vec::new(), Vec::new()),
     };
+    // Right-click deletion is available only for an actual local-only card.
+    // Do not expose it for a matching CardDAV contact or a GAL result.
+    let local_deletable: Vec<bool> = suggestions.iter().zip(&suggestion_sources).map(|(c, source)| {
+        *source == "Contacts" && s.people(&c.address.email).iter().any(|p| {
+            p.book == mailcraft_engine::model::pim::LOCAL
+                && p.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(&c.address.email))
+        })
+    }).collect();
     let clock = s.clock;
     // Delay Delivery holds mail in the Outbox, which only a server account's sends from.
     let can_delay = s.compose.as_ref().and_then(|c| s.account(&c.account)).is_some_and(|a| !a.is_local());
@@ -737,7 +773,7 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                 "cc" => &mut c.cc,
                                 _ => &mut c.bcc,
                             };
-                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions, &suggestion_sources) {
+                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions, &suggestion_sources, &local_deletable, delete_key) {
                                 let d = crate::Dialog::select_names(c, name);
                                 acts.push(Action::Dialog(d));
                             }
