@@ -70,6 +70,31 @@ pub fn is_valid_email(s: &str) -> bool {
         && !domain.contains('@')
 }
 
+/// Put a delimiter after a complete recipient followed by whitespace.
+/// Users often paste or type two bare addresses separated by a space; without
+/// this, the field parser treats them as one invalid address. Preserve spaces
+/// within display names and never guess whether an incomplete address is valid.
+pub fn separate_recipient_emails(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while !rest.is_empty() {
+        let offset = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        out.push_str(&rest[..offset]);
+        rest = &rest[offset..];
+        if rest.is_empty() {
+            break;
+        }
+        let n = rest.find(|c: char| !c.is_whitespace()).unwrap_or(rest.len());
+        let prefix = out.rsplit([',', ';']).next().unwrap_or("").trim();
+        if parse_one(prefix).is_some() {
+            out.push(';');
+        }
+        out.push_str(&rest[..n]);
+        rest = &rest[n..];
+    }
+    out
+}
+
 /// Parse what was typed in a To/Cc/Bcc box: addresses separated by `,` or `;`, each either bare
 /// (`zoe@example.org`) or with a name (`Zoe Park <zoe@example.org>`, `"Park, Zoe" <zoe@…>`).
 /// Returns the invalid entries as the error.
@@ -143,6 +168,16 @@ pub fn display_list(list: &[EmailAddress]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whitespace_between_complete_recipients_is_a_separator() {
+        assert_eq!(separate_recipient_emails("one@example.com two@example.com"), "one@example.com; two@example.com");
+        assert_eq!(separate_recipient_emails("one@example.com two@example.com three@example.com"), "one@example.com; two@example.com; three@example.com");
+        assert_eq!(separate_recipient_emails("Dennis Lam <dennis@example.com> Velen Kwong <velen@example.com>"), "Dennis Lam <dennis@example.com>; Velen Kwong <velen@example.com>");
+        assert_eq!(separate_recipient_emails("Chan Tai Man"), "Chan Tai Man");
+        assert_eq!(separate_recipient_emails("incomplete@ another@example.com"), "incomplete@ another@example.com");
+        assert_eq!(parse_list(&separate_recipient_emails("one@example.com two@example.com")).unwrap().len(), 2);
+    }
 
     #[test]
     fn parses_mixed_lists() {
