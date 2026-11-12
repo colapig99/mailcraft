@@ -241,6 +241,7 @@ pub(super) fn recipient_field(
         }
     }
     if r.changed() {
+        *value = addr::separate_recipient_emails(value);
         st.suggest_index = 0;
         st.suggest_dismissed = None;
     }
@@ -339,6 +340,21 @@ pub fn compose_window(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
 }
 
 pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut Vec<Action>, in_window: bool) {
+    if let Some(id) = s.compose.as_ref().map(|c| c.id)
+        && st.suggest_owner != Some(id)
+    {
+        // Several compose windows share UiState. Save and restore autocomplete
+        // focus separately so opening another draft never inherits stale state.
+        if let Some(old) = st.suggest_owner {
+            st.suggest_by_compose.insert(old, (st.suggest_field, st.suggest_index, st.suggest_dismissed.take(), st.suggest_refocus));
+        }
+        let (field, index, dismissed, refocus) = st.suggest_by_compose.remove(&id).unwrap_or((None, 0, None, None));
+        st.suggest_field = field;
+        st.suggest_index = index;
+        st.suggest_dismissed = dismissed;
+        st.suggest_refocus = refocus;
+        st.suggest_owner = Some(id);
+    }
     let t = st.tokens;
     attach_dropped(ui, &t, acts);
     // Where there are no windows of their own (the browser), the other messages being written
