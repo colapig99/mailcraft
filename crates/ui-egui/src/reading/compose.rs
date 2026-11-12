@@ -369,23 +369,19 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
     let has_directory = !s.directory_accounts().is_empty();
     let delete_key = ui.make_persistent_id(("delete-local-contact-suggestion", s.compose.as_ref().map(|c| c.id)));
     if let Some(email) = ui.ctx().data(|d| d.get_temp::<String>(delete_key)) {
-        egui::Window::new("Delete local contact?")
-            .id(delete_key.with("confirm"))
-            .collapsible(false)
-            .resizable(false)
-            .show(ui.ctx(), |ui| {
-                ui.label(format!("Delete the local contact containing {email}?"));
-                ui.label("This does not delete mail, GAL entries or server contacts.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
-                    }
-                    if ui.button("Delete local contact").clicked() {
-                        acts.push(Action::Run("contact.deleteLocalByEmail", json!({"email": email})));
-                        ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
-                    }
-                });
+        egui::Window::new("Delete local contact?").id(delete_key.with("confirm")).collapsible(false).resizable(false).show(ui.ctx(), |ui| {
+            ui.label(format!("Delete the local contact containing {email}?"));
+            ui.label("This does not delete mail, GAL entries or server contacts.");
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                }
+                if ui.button("Delete local contact").clicked() {
+                    acts.push(Action::Run("contact.deleteLocalByEmail", json!({"email": email})));
+                    ui.ctx().data_mut(|d| d.remove::<String>(delete_key));
+                }
             });
+        });
     }
     // Keep the user's active lookup visible rather than treating a pending or
     // rejected directory query as proof that the person is absent from the GAL.
@@ -489,12 +485,16 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
     };
     // Right-click deletion is available only for an actual local-only card.
     // Do not expose it for a matching CardDAV contact or a GAL result.
-    let local_deletable: Vec<bool> = suggestions.iter().zip(&suggestion_sources).map(|(c, source)| {
-        *source == "Contacts" && s.people(&c.address.email).iter().any(|p| {
-            p.book == mailcraft_engine::model::pim::LOCAL
-                && p.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(&c.address.email))
+    let local_deletable: Vec<bool> = suggestions
+        .iter()
+        .zip(&suggestion_sources)
+        .map(|(c, source)| {
+            *source == "Contacts"
+                && s.people(&c.address.email).iter().any(|p| {
+                    p.book == mailcraft_engine::model::pim::LOCAL && p.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(&c.address.email))
+                })
         })
-    }).collect();
+        .collect();
     let clock = s.clock;
     // Delay Delivery holds mail in the Outbox, which only a server account's sends from.
     let can_delay = s.compose.as_ref().and_then(|c| s.account(&c.account)).is_some_and(|a| !a.is_local());
@@ -773,7 +773,19 @@ pub(super) fn compose(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut
                                 "cc" => &mut c.cc,
                                 _ => &mut c.bcc,
                             };
-                            if recipient_field(ui, st, name, label, value, hint, name == "to" && focus_to, &suggestions, &suggestion_sources, &local_deletable, delete_key) {
+                            if recipient_field(
+                                ui,
+                                st,
+                                name,
+                                label,
+                                value,
+                                hint,
+                                name == "to" && focus_to,
+                                &suggestions,
+                                &suggestion_sources,
+                                &local_deletable,
+                                delete_key,
+                            ) {
                                 let d = crate::Dialog::select_names(c, name);
                                 acts.push(Action::Dialog(d));
                             }
