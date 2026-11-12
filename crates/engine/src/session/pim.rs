@@ -480,9 +480,8 @@ impl Session {
             .iter()
             .flat_map(|(account, p)| {
                 p.cards.iter().filter_map(|c| {
-                    (c.book == LOCAL
-                        && c.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(email)))
-                    .then(|| (account.clone(), c.card.uid.clone()))
+                    (c.book == LOCAL && c.card.emails.iter().any(|e| e.value.eq_ignore_ascii_case(email)))
+                        .then(|| (account.clone(), c.card.uid.clone()))
                 })
             })
             .collect();
