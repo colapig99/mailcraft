@@ -22,6 +22,33 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         .params(r#"{"on"?: bool}"#),
         // Navigation
         CommandSpec::new("folder.open", "Open folder", "Folder pane", open_folder).params(r#"{"account": string, "folder": string}"#),
+        CommandSpec::new("folder.publicSync", "Choose Public Folder for syncing", "Folder pane", |s, v| {
+            let account = p::req_str(v, "account")?.to_string();
+            let folder = p::req_str(v, "folder")?.to_string();
+            if !folder.to_ascii_lowercase().starts_with("public folders/")
+                || s.folder(&account, &folder).is_none()
+            {
+                return Err(CmdError::Params("an existing IMAP Public Folder is required".into()));
+            }
+            let key = format!("{account}|{folder}");
+            let on = p::bool(v, "on").unwrap_or(!s.prefs.public_folder_sync.contains(&key));
+            let mut selected = s.prefs.public_folder_sync.clone();
+            if on { selected.insert(key); } else { selected.remove(&key); }
+            // Per-account worker reads this tiny document before every full sync.
+            let allowed: std::collections::BTreeSet<String> = selected.iter()
+                .filter_map(|entry| entry.strip_prefix(&format!("{account}|")))
+                .map(str::to_string)
+                .collect();
+            let store = s.store.as_ref().ok_or_else(|| CmdError::Disabled("the mail data folder is unavailable".into()))?;
+            store.save_account_doc(&account, "public-folder-sync.json", &allowed)
+                .map_err(|e| CmdError::Failed(format!("Public Folder selection wasn't saved: {e}")))?;
+            s.prefs.public_folder_sync = selected;
+            // Enabling is an explicit attempt. Server permissions still apply.
+            if on && !s.prefs.work_offline {
+                s.push_job(mailcraft_model::Job::SyncFolder { account, folder });
+            }
+            Ok(json!({"enabled": on}))
+        }).params(r#"{"account": string, "folder": string, "on"?: bool}"#),
         CommandSpec::new("folder.unified", "All inboxes", "Folder pane › Favorites", unified).params(r#"{"role"?: "inbox"|"sent"|"drafts"|…}"#),
         CommandSpec::new("folder.outbox", "Outbox", "Folder pane", |s, _| {
             s.refresh_outbox();
@@ -251,7 +278,7 @@ pub(super) fn sync_folder(s: &mut Session, _: &Value) -> CmdResult {
         View::Empty | View::Outbox => Vec::new(),
     };
     for (account, folder) in folders {
-        if s.account(&account).is_some_and(|a| !a.is_local()) {
+        if s.account(&account).is_some_and(|a| !a.is_local()) && s.public_folder_enabled(&account, &folder) {
             s.push_job(mailcraft_model::Job::SyncFolder { account, folder });
             n += 1;
         }
@@ -264,6 +291,9 @@ pub(super) fn open_folder(s: &mut Session, v: &Value) -> CmdResult {
     let folder = p::req_str(v, "folder")?.to_string();
     if s.folder(&account, &folder).is_none() {
         return Err(CmdError::Params(format!("no folder `{folder}` in account `{account}`")));
+    }
+    if !s.public_folder_enabled(&account, &folder) {
+        return Err(CmdError::Disabled("Select this Public Folder for syncing before opening it".into()));
     }
     s.open_view(View::Folder { account, folder });
     Ok(json!({"messages": s.list.len()}))
