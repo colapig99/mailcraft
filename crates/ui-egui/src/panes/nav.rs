@@ -475,7 +475,7 @@ fn shared_header(
     {
         acts.push(Action::Run("mail.move", json!({"folder": top.path})));
     }
-    if let Some(p) = resp.dnd_release_payload::<DragFolder>()
+    if public_enabled && let Some(p) = resp.dnd_release_payload::<DragFolder>()
         && p.account == top.account
     {
         acts.push(Action::Run("folder.move", json!({"account": top.account, "folder": p.path, "parent": top.path})));
@@ -556,6 +556,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
         acts.push(Action::Run("folder.open", json!({"account": f.account, "folder": f.path})));
     }
     if f.selectable
+        && public_enabled
         && let Some(p) = resp.dnd_release_payload::<DragKeys>()
         && p.0.iter().all(|k| k.account == f.account)
     {
@@ -567,7 +568,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     {
         acts.push(Action::Run("folder.move", json!({"account": f.account, "folder": p.path, "parent": f.path})));
     }
-    if user_folder && !favorite && resp.drag_started() {
+    if user_folder && public_enabled && !favorite && resp.drag_started() {
         resp.dnd_set_drag_payload(DragFolder { account: f.account.clone(), path: f.path.clone() });
     }
     let path = f.path.clone();
@@ -591,14 +592,14 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
             acts.push(Action::Run("folder.sync", json!({})));
             ui.close();
         }
-        if ui.button(tl!("Mark all as read")).clicked() {
+        if ui.add_enabled(public_enabled, egui::Button::new(tl!("Mark all as read"))).clicked() {
             acts.push(Action::Run("folder.open", json!({"account": account, "folder": path})));
             acts.push(Action::Run("mail.markAllRead", json!({})));
             ui.close();
         }
         // Delete All, as Outlook's: Deleted Items and Junk are emptied for good, any other
         // folder's mail goes to Deleted Items.
-        if f.selectable && ui.button(tl!("Delete all…")).clicked() {
+        if f.selectable && public_enabled && ui.button(tl!("Delete all…")).clicked() {
             acts.push(Action::Dialog(Dialog::ConfirmEmpty {
                 account: account.clone(),
                 folder: path.clone(),
