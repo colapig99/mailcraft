@@ -391,8 +391,9 @@ fn safe_doc(name: &str) -> String {
 pub struct Store {
     root: PathBuf,
     files: Routed,
-    /// Serializes read-modify-write of ops.json between the UI-side pool and account threads.
-    changes: Arc<Mutex<()>>,
+    /// Serializes each account's read-modify-write operations without blocking
+    /// unrelated accounts. Different accounts may share a stripe (safe, just slower).
+    changes: Arc<[Mutex<()>; 64]>,
     /// How many message sources were read ([`Store::reads`]).
     reads: Arc<std::sync::atomic::AtomicU64>,
     /// The accounts whose search index is being written ([`search::Writer`]), and whether the
@@ -425,7 +426,7 @@ impl Store {
         Ok(Store {
             files: Routed::new(&root, Files::Disk),
             root,
-            changes: Arc::default(),
+            changes: Arc::new(std::array::from_fn(|_| Mutex::new(()))),
             reads: Arc::default(),
             search_writers: Arc::default(),
             removals: Arc::default(),
@@ -445,7 +446,7 @@ impl Store {
         Ok(Store {
             files: Routed::new(&root, Files::Packed(Arc::new(packs))),
             root,
-            changes: Arc::default(),
+            changes: Arc::new(std::array::from_fn(|_| Mutex::new(()))),
             reads: Arc::default(),
             search_writers: Arc::default(),
             removals: Arc::default(),
@@ -465,7 +466,7 @@ impl Store {
         Ok(Store {
             files: Routed::new(&root, Files::Packed(Arc::new(packs))),
             root,
-            changes: Arc::default(),
+            changes: Arc::new(std::array::from_fn(|_| Mutex::new(()))),
             reads: Arc::default(),
             search_writers: Arc::default(),
             removals: Arc::default(),
@@ -480,7 +481,7 @@ impl Store {
         Store {
             files: Routed::new(&root, Files::Memory(Arc::default(), Arc::default())),
             root,
-            changes: Arc::default(),
+            changes: Arc::new(std::array::from_fn(|_| Mutex::new(()))),
             reads: Arc::default(),
             search_writers: Arc::default(),
             removals: Arc::default(),
@@ -498,7 +499,7 @@ impl Store {
         Store {
             files: Routed::new(&root, Files::Failing(Arc::new(faults))),
             root,
-            changes: Arc::default(),
+            changes: Arc::new(std::array::from_fn(|_| Mutex::new(()))),
             reads: Arc::default(),
             search_writers: Arc::default(),
             removals: Arc::default(),
@@ -678,7 +679,7 @@ impl Store {
     #[track_caller]
     pub fn save_folders(&self, account: &str, folders: &[Folder]) -> Result<()> {
         self.flush_marks_of(account, None);
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         self.write_folders(account, folders)
     }
 
