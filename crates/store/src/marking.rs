@@ -234,14 +234,21 @@ impl Store {
     /// The lock every change of a list (and of the folder list) is made under; a wait for it over
     /// [`SLOW_WAIT`] is logged with its caller.
     #[track_caller]
-    pub(crate) fn hold_changes(&self) -> MutexGuard<'_, ()> {
-        match self.changes.try_lock() {
+    pub(crate) fn hold_changes(&self, account: &str) -> MutexGuard<'_, ()> {
+        // Deterministic in-process account sharding. A collision merely
+        // serializes two accounts; it never allows concurrent writes to one.
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        account.hash(&mut hasher);
+        let stripe = (hasher.finish() as usize) % self.changes.len();
+        let lock = &self.changes[stripe];
+        match lock.try_lock() {
             Ok(held) => held,
             Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
             Err(std::sync::TryLockError::WouldBlock) => {
                 let slow = Slow::start();
-                let held = self.changes.lock().unwrap_or_else(PoisonError::into_inner);
-                slow.log("the lock of the lists' changes", std::panic::Location::caller());
+                let held = lock.lock().unwrap_or_else(PoisonError::into_inner);
+                slow.log("the account's lists' changes", std::panic::Location::caller());
                 held
             }
         }
@@ -271,8 +278,10 @@ impl Store {
     /// Hold the lock every change of a list is made under, as the thread for marks does through a
     /// commit (tests: what the window's thread would wait for).
     #[doc(hidden)]
-    pub fn hold_lists(&self) -> MutexGuard<'_, ()> {
-        self.hold_changes()
+    pub fn hold_lists(&self) -> Vec<MutexGuard<'_, ()>> {
+        // Testing hook: block writers of every account, as the original
+        // single mutex did. Always lock stripes in increasing order.
+        self.changes.iter().map(|lock| lock.lock().unwrap_or_else(PoisonError::into_inner)).collect()
     }
 
     /// What came of the marks written since the last call that the window should hear of.
@@ -363,7 +372,7 @@ impl Store {
     /// ([`folders::MARKS`]) while they're few, and into its pages once they're more; a small list
     /// is written whole. Says how many of the counts' folders the account's list has.
     pub fn save_flags(&self, account: &str, lists: &[FolderMarks], counts: &[(String, u32, u32)]) -> Result<usize> {
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let (mut writes, mut stale) = (Vec::new(), Vec::new());
         for marks in lists.iter().filter(|m| !m.flags.is_empty()) {
             let (w, s) = self.flag_writes(account, marks)?;
