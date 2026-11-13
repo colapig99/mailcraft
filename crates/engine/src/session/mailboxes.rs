@@ -529,6 +529,8 @@ impl Session {
         let mut list = self.filtered(list);
         arrange_list(&mut list, self.prefs.arrange, self.prefs.reverse_sort);
         self.take_list(list);
+        // Repair visibly corrupted sender names with a bounded GAL lookup budget.
+        self.look_up_list_senders();
     }
 
     /// What of `list` the filter (and the Focused/Other split) shows.
