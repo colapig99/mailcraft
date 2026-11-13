@@ -71,7 +71,7 @@ impl Session {
 
     /// At most two distinct broken names per minute, limited to the first
     /// forty message summaries. Never send a request from the drawing loop.
-    pub(super) fn look_up_list_senders(&mut self) {
+    pub(crate) fn look_up_list_senders(&mut self) {
         if self.directory_accounts().is_empty() {
             return;
         }
