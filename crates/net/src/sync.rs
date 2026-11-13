@@ -39,6 +39,17 @@ fn sync_stage<T>(result: Result<T>, account: &str, folder: &str, operation: &str
         } else {
             log::warn!("{account}: IMAP sync folder={folder:?} operation={operation}: {e}");
         }
+    }).map_err(|e| {
+        // Distinguish a refused SELECT from a refusal during a later FETCH or
+        // SEARCH; only the former may be safely skipped by automatic sync.
+        if folder.to_ascii_lowercase().starts_with("public folders/")
+            && (operation == "SELECT" || operation == "SELECT QRESYNC")
+            && matches!(&e, NetError::No(message) if message.trim().trim_end_matches('.').eq_ignore_ascii_case("Access denied"))
+        {
+            NetError::No("Public Folder SELECT: Access denied.".into())
+        } else {
+            e
+        }
     })
 }
 
