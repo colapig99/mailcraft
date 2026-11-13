@@ -605,6 +605,9 @@ impl Worker {
                 false
             }
             Err(e) => {
+                // Keep the original error handling, but identify the particular
+                // folder when the server rejects only part of a full sync.
+                log::warn!("{}: folder sync failed path={path:?}: {e}", self.acc.id);
                 self.failed(e);
                 false
             }
