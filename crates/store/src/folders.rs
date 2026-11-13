@@ -144,7 +144,7 @@ impl Store {
     ) -> Result<usize> {
         // A list written whole after the marks handed over before, never under them.
         self.flush_marks_of(account, Some(folder));
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let (writes, stale) = self.list_writes(account, folder, state, changed)?;
         // The list and its pages together (one transaction in a data file).
         let written = writes.len();
@@ -285,7 +285,7 @@ impl Store {
             m.has_attachments = files;
             (true, changed)
         };
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let dir = self.folder_dir(account, folder);
         let head = dir.join("state.json");
         let mut file: StateFile = self.read_json(&head)?;
@@ -449,7 +449,7 @@ impl Store {
     /// Folder-list changes: `folders.json` is updated and each folder's cache moves with it (or
     /// goes, for a deleted folder). Returns the folders whose contents should be shown afresh.
     pub(super) fn apply_folder_op(&self, account: &str, op: &Op) -> Result<Vec<String>> {
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let mut list = self.read_folders(account)?;
         let delimiter = list.iter().find_map(|f| f.delimiter);
         let changed = match op {
@@ -515,7 +515,7 @@ impl Store {
         if folders.is_empty() {
             return Ok(());
         }
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let mut list = self.read_folders(account)?;
         let mut at: std::collections::HashMap<String, usize> = list.iter().enumerate().map(|(i, f)| (f.path.clone(), i)).collect();
         for folder in folders {
@@ -538,7 +538,7 @@ impl Store {
     /// folders an import added since it was read. Says how many of them the list has.
     pub fn update_folder_counts(&self, account: &str, counts: &[(String, u32, u32)]) -> Result<usize> {
         self.flush_marks_of(account, None);
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let mut list = self.read_folders(account)?;
         let (found, changed) = set_counts(&mut list, counts);
         if changed {
