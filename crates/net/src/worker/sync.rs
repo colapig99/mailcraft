@@ -610,8 +610,7 @@ impl Worker {
                 false
             }
             Err(e) if path.to_ascii_lowercase().starts_with("public folders/")
-                && matches!(&e, NetError::No(message) if message.trim().trim_end_matches('.').eq_ignore_ascii_case("Access denied"))
-                && self.conn.as_ref().is_some_and(|conn| matches!(conn, Conn::Imap(c) if c.selected() != Some(path))) =>
+                && matches!(&e, NetError::No(message) if message == "Public Folder SELECT: Access denied.") =>
             {
                 // A listed but inaccessible Public Folder: the server refused
                 // SELECT. Keep it visible as a server folder, but do not sync
