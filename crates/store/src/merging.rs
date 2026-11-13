@@ -214,7 +214,7 @@ impl Store {
     /// account's list hasn't is started afresh, of `validity`.
     fn reserve(&self, account: &str, folder: &str, validity: u32, n: u32) -> Result<(u32, u32)> {
         self.flush_marks_of(account, Some(folder));
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let listed = self.read_folders(account)?.iter().any(|f| f.path == folder);
         let mut st = if listed { self.list_from_disk(account, folder)? } else { FolderState { validity, ..FolderState::default() } };
         let first = st.free_uid(account, folder)?;
@@ -232,7 +232,7 @@ impl Store {
     fn append(&self, account: &str, theirs: &Folder, validity: u32, added: Vec<SharedSummary>) -> Result<()> {
         let path = theirs.path.as_str();
         self.flush_marks_of(account, None);
-        let _held = self.hold_changes();
+        let _held = self.hold_changes(account);
         let mut st = self.list_from_disk(account, path)?;
         if st.validity != validity {
             let why = "the folder was made again while the file was read again";
