@@ -2,7 +2,7 @@ name: Legacy LDAP compile and tests
 
 on:
   push:
-    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback]
+    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback, diagnostic/imap-sync-access-denied]
   workflow_dispatch:
 
 permissions:
