@@ -247,6 +247,11 @@ impl Worker {
         // into the account's folder list, and says all of it.
         let mut said = Instant::now();
         for path in paths {
+            // A Public Folder may be listed by Exchange even when IMAP SELECT
+            // is forbidden. Do not ask for it again on periodic full syncs.
+            if self.denied_public_folders.contains(&path) {
+                continue;
+            }
             if !self.counts_unsaid.is_empty() && said.elapsed() >= COUNTS_EVERY {
                 self.say_counts();
                 said = Instant::now();
@@ -602,6 +607,18 @@ impl Worker {
             // Its account removed meanwhile: nothing to say of it.
             Err(e) if self.removed() => {
                 log::info!("{}: a folder of an account removed wasn't synced: {e}", self.acc.id);
+                false
+            }
+            Err(e) if path.to_ascii_lowercase().starts_with("public folders/")
+                && matches!(&e, NetError::No(message) if message.trim().trim_end_matches('.').eq_ignore_ascii_case("Access denied"))
+                && self.conn.as_ref().is_some_and(|conn| matches!(conn, Conn::Imap(c) if c.selected() != Some(path))) =>
+            {
+                // A listed but inaccessible Public Folder: the server refused
+                // SELECT. Keep it visible as a server folder, but do not sync
+                // or warn about it repeatedly. Explicit access remains separate.
+                if self.denied_public_folders.insert(path.to_string()) {
+                    log::info!("{}: skipping inaccessible IMAP Public Folder path={path:?} for this session (SELECT Access denied)", self.acc.id);
+                }
                 false
             }
             Err(e) => {
