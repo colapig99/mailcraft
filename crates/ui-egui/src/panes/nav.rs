@@ -531,9 +531,16 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     // Unread counts matter for mail you receive, not for Sent or Drafts.
     let unread = if matches!(f.look(), FolderRole::Sent | FolderRole::Drafts | FolderRole::Trash | FolderRole::Archive) { 0 } else { f.unread };
     let user_folder = !f.is_fixed();
+    let is_public = f.path.to_ascii_lowercase().starts_with("public folders/");
+    let public_enabled = s.public_folder_enabled(&f.account, &f.path);
     // Drafts says how many it holds, as Outlook's (a saved draft is never unread).
     let count = if f.look() == FolderRole::Drafts { Count::Items(f.total) } else { Count::Unread(unread) };
-    let resp = row(ui, t, role_icon(f.look()), &name, count, depth, selected, f.selectable, user_folder && !favorite);
+    let shown_name = if is_public && f.selectable {
+        format!("{}  {}", if public_enabled { "☑" } else { "☐" }, name)
+    } else {
+        name.clone()
+    };
+    let resp = row(ui, t, role_icon(f.look()), &shown_name, count, depth, selected, f.selectable && public_enabled, user_folder && !favorite);
     if let Some(collapsed) = collapse {
         let x = resp.rect.min.x + 10.0 + depth as f32 * 14.0 - 14.0;
         let m = crate::bidi::Mirror::new(resp.rect);
@@ -545,7 +552,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
             acts.push(Action::Run("view.collapse", json!({"key": folder_key(&f.account, &f.path)})));
         }
     }
-    if f.selectable && resp.clicked() {
+    if f.selectable && public_enabled && resp.clicked() {
         acts.push(Action::Run("folder.open", json!({"account": f.account, "folder": f.path})));
     }
     if f.selectable
@@ -567,11 +574,19 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     let account = f.account.clone();
     let is_favorite = s.favorites().iter().any(|r| r.account == f.account && r.folder == f.path);
     resp.context_menu(|ui| {
-        if ui.button(tl!("Open")).clicked() {
+        if is_public && f.selectable {
+            let mut enabled = public_enabled;
+            if ui.checkbox(&mut enabled, "Sync this Public Folder").changed() {
+                acts.push(Action::Run("folder.publicSync", json!({"account": account, "folder": path, "on": enabled})));
+                ui.close();
+            }
+            ui.separator();
+        }
+        if ui.add_enabled(public_enabled, egui::Button::new(tl!("Open"))).clicked() {
             acts.push(Action::Run("folder.open", json!({"account": account, "folder": path})));
             ui.close();
         }
-        if ui.button(tl!("Update folder")).clicked() {
+        if ui.add_enabled(public_enabled, egui::Button::new(tl!("Update folder"))).clicked() {
             acts.push(Action::Run("folder.open", json!({"account": account, "folder": path})));
             acts.push(Action::Run("folder.sync", json!({})));
             ui.close();
