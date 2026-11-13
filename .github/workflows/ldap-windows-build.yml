@@ -2,9 +2,11 @@ name: Legacy Exchange Windows test build
 # Performance POC: persistent signed/sealed LDAP worker, indexed and historical alias search
 on:
   push:
-    branches: [feature/exchange-legacy-ldap]
+    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback]
     paths:
       - '.github/workflows/ldap-windows-build.yml'
+      - 'crates/engine/src/session/pim/directory.rs'
+      - 'crates/ui-egui/src/panes/list.rs'
       - 'crates/net/src/ldap.rs'
       - 'crates/net/src/ldap_windows.ps1'
       - 'crates/engine/src/session/mailboxes.rs'
