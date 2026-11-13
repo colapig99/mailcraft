@@ -33,6 +33,10 @@ pub struct Directory {
     pub rev: u64,
     /// Exchange Online accounts whose directory needs the user's permission first (issue #9).
     pub consent: BTreeSet<String>,
+    /// Names learned from GAL replies, indexed by exact lowercase SMTP address.
+    pub sender_names: HashMap<String, String>,
+    /// Rate-limit automatic sender-name lookups across list refreshes.
+    pub sender_lookup_at: Option<i64>,
 }
 
 /// A search as it's kept and sent: trimmed, lower case.
@@ -40,7 +44,64 @@ fn key(query: &str) -> String {
     query.trim().to_lowercase()
 }
 
+/// Only repair names whose original sender header has visibly lost characters.
+fn damaged_sender_name(name: &str) -> bool {
+    name.contains("???")
+}
+
 impl Session {
+    /// Sender label without mutating stored messages. A successful GAL name is
+    /// used only for the same exact SMTP address, never for a fuzzy name match.
+    pub fn sender_display_name(&self, sender: &EmailAddress) -> String {
+        if !damaged_sender_name(&sender.name) {
+            return sender.display().to_string();
+        }
+        if let Some(name) = self.directory.sender_names.get(&sender.email.trim().to_ascii_lowercase()) {
+            return name.clone();
+        }
+        // An original header containing question marks cannot be decoded back.
+        // Keep the readable English part until an exact GAL match is available.
+        let readable = sender.name.split("(???").next().unwrap_or("").trim();
+        if readable.is_empty() || readable.contains("???") {
+            sender.email.clone()
+        } else {
+            readable.to_string()
+        }
+    }
+
+    /// At most two distinct broken names per minute, limited to the first
+    /// forty message summaries. Never send a request from the drawing loop.
+    pub(super) fn look_up_list_senders(&mut self) {
+        if self.directory_accounts().is_empty() {
+            return;
+        }
+        let now = self.clock.now;
+        if self.directory.sender_lookup_at.is_some_and(|at| now.saturating_sub(at) < 60) {
+            return;
+        }
+        let mut addresses = Vec::<String>::new();
+        for message in self.list.iter().take(40) {
+            let sender = &message.from;
+            if !damaged_sender_name(&sender.name) || !sender.is_valid() {
+                continue;
+            }
+            let email = sender.email.trim().to_ascii_lowercase();
+            if self.directory.sender_names.contains_key(&email) || addresses.contains(&email) {
+                continue;
+            }
+            addresses.push(email);
+            if addresses.len() == 2 {
+                break;
+            }
+        }
+        if !addresses.is_empty() {
+            self.directory.sender_lookup_at = Some(now);
+            for email in addresses {
+                self.look_up_directory(&email, false);
+            }
+        }
+    }
+
     /// The accounts with an organisation directory: Exchange, on premises (EWS) or online
     /// (Graph, issue #9). A personal Microsoft account (Outlook.com, Hotmail) has none.
     pub fn directory_accounts(&self) -> Vec<String> {
@@ -161,6 +222,15 @@ impl Session {
                 .map(|(n, e)| EmailAddress::new(n.clone(), e.clone()))
                 .collect();
         }
+        // Keep a compact exact-address index for message-list rendering.
+        // Empty or corrupted GAL names must never overwrite a good label.
+        if error.is_none() {
+            for person in &a.people {
+                if !person.name.trim().is_empty() && !damaged_sender_name(&person.name) {
+                    self.directory.sender_names.insert(person.email.trim().to_ascii_lowercase(), person.name.clone());
+                }
+            }
+        }
         a.error = error;
         a.at = Some(self.clock.now);
         self.directory.rev = self.directory.rev.wrapping_add(1);
@@ -207,6 +277,8 @@ impl Session {
     /// account's address books again.
     pub fn refresh_directory(&mut self) -> CmdResult {
         self.directory.answers.clear();
+        self.directory.sender_names.clear();
+        self.directory.sender_lookup_at = None;
         self.directory.rev = self.directory.rev.wrapping_add(1);
         let exchange: Vec<String> = self
             .accounts
@@ -231,4 +303,16 @@ fn matches_query(a: &EmailAddress, q: &str) -> bool {
     let name = a.name.to_lowercase();
     let email = a.email.to_lowercase();
     email.starts_with(q) || name.starts_with(q) || name.split([' ', ',', '.', '-']).any(|w| w.starts_with(q))
+}
+
+#[cfg(test)]
+mod sender_name_tests {
+    use super::*;
+
+    #[test]
+    fn broken_name_detection_does_not_flag_normal_chinese() {
+        assert!(damaged_sender_name("Tam Chi Jia (???)"));
+        assert!(!damaged_sender_name("Ivan Tin (丁雪濤)"));
+        assert!(!damaged_sender_name("Who?"));
+    }
 }
