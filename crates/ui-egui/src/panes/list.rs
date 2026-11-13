@@ -438,7 +438,7 @@ fn message_row(
     // To a screen reader a row is one item of the list: who, the subject, when, and what its
     // markers show (unread, flagged, attachments).
     resp.widget_info(|| {
-        let mut who = if sent_view { m.to.first().map(|a| a.display().to_string()).unwrap_or_default() } else { m.from.display().to_string() };
+        let mut who = if sent_view { m.to.first().map(|a| a.display().to_string()).unwrap_or_default() } else { s.sender_display_name(&m.from) };
         if marks.address {
             who = format!("{who} <{}>", m.from.email.trim());
         }
@@ -477,7 +477,10 @@ fn message_row(
 
     let compact = s.prefs.compact;
     let mut x = r.min.x + 14.0;
-    let who_addr = if sent_view { m.to.first().cloned().unwrap_or_default() } else { m.from.clone() };
+    let mut who_addr = if sent_view { m.to.first().cloned().unwrap_or_default() } else { m.from.clone() };
+    if !sent_view {
+        who_addr.name = s.sender_display_name(&who_addr);
+    }
     if !compact {
         let c = mr.pos(egui::pos2(x + 17.0, r.min.y + 26.0));
         widgets::avatar(ui, c, 17.0, &who_addr.initials(), theme::avatar_color(&who_addr.email, t.dark));
@@ -524,7 +527,7 @@ fn message_row(
         p.galley(egui::pos2(mr.start(who_x, dw), line1), dg, t.danger);
         who_x += dw + 6.0;
     }
-    let who = if sent_view { tf!("To: {names}", names = addr::display_list(&m.to)) } else { m.from.display().to_string() };
+    let who = if sent_view { tf!("To: {names}", names = addr::display_list(&m.to)) } else { s.sender_display_name(&m.from) };
     let who = if count > 1 && !marks.address { format!("{who}  ({count})") } else { who };
     let (who, who_rtl) = crate::bidi::shown(&who);
     let who_right = right - tw - 10.0;
