@@ -622,6 +622,9 @@ struct Worker {
     /// JMAP and Graph accounts: message numbers and mailbox ids.
     jstate: jmap::State,
     folders: Vec<Folder>,
+    /// Public folders whose IMAP SELECT was explicitly refused in this session.
+    /// Do not probe them again during automatic full-folder synchronisation.
+    denied_public_folders: std::collections::HashSet<String>,
     queue: VecDeque<Job>,
     /// Messages whose text went first (issue #24), the whole of each still to come: downloaded
     /// when nothing else waits, so the next one opened shows its text without waiting on them.
@@ -706,6 +709,7 @@ impl Worker {
             conn: None,
             jstate,
             folders,
+            denied_public_folders: std::collections::HashSet::new(),
             windows,
             queue: VecDeque::new(),
             rest: VecDeque::new(),
