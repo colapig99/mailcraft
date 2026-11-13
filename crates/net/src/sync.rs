@@ -30,7 +30,16 @@ pub use mailcraft_jmap::{SyncOptions, SyncReport, fill_from_source, keep_source}
 /// Record the failing IMAP stage without logging message content or credentials.
 /// This leaves the original error and retry policy unchanged.
 fn sync_stage<T>(result: Result<T>, account: &str, folder: &str, operation: &str) -> Result<T> {
-    result.inspect_err(|e| log::warn!("{account}: IMAP sync folder={folder:?} operation={operation}: {e}"))
+    result.inspect_err(|e| {
+        let denied_public_select = folder.to_ascii_lowercase().starts_with("public folders/")
+            && matches!(e, NetError::No(message) if message.trim().trim_end_matches('.').eq_ignore_ascii_case("Access denied"))
+            && (operation == "SELECT" || operation == "SELECT QRESYNC");
+        if denied_public_select {
+            log::info!("{account}: inaccessible Public Folder folder={folder:?} operation={operation}: {e}");
+        } else {
+            log::warn!("{account}: IMAP sync folder={folder:?} operation={operation}: {e}");
+        }
+    })
 }
 
 /// Downloading ahead, one message at a time: whether to go on after one failed. A message the
