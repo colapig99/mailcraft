@@ -27,6 +27,12 @@ use crate::{NetError, Result};
 
 pub use mailcraft_jmap::{SyncOptions, SyncReport, fill_from_source, keep_source};
 
+/// Record the failing IMAP stage without logging message content or credentials.
+/// This leaves the original error and retry policy unchanged.
+fn sync_stage<T>(result: Result<T>, account: &str, folder: &str, operation: &str) -> Result<T> {
+    result.inspect_err(|e| log::warn!("{account}: IMAP sync folder={folder:?} operation={operation}: {e}"))
+}
+
 /// Downloading ahead, one message at a time: whether to go on after one failed. A message the
 /// server won't give (gone meanwhile, or failing on its side) is left for when it's opened, and
 /// the rest still come down; a refused sign-in, or several failures running (the connection,
@@ -101,10 +107,10 @@ pub fn sync_folder_as<S: Read + Write>(
     // QRESYNC: expunges and flag changes arrive with the SELECT itself (RFC 7162 §3.2.5).
     let quick = c.qresync() && st.validity != 0 && st.highest_modseq > 0 && cached_max > 0;
     let (info, quick) = if quick {
-        let (info, vanished, changed) = c.select_qresync(folder, st.validity, st.highest_modseq, &format!("{cached_min}:{cached_max}"))?;
+        let (info, vanished, changed) = sync_stage(c.select_qresync(folder, st.validity, st.highest_modseq, &format!("{cached_min}:{cached_max}")), account, folder, "SELECT QRESYNC")?;
         (info, Some((vanished, changed)))
     } else {
-        (c.select(folder, false)?, None)
+        (sync_stage(c.select(folder, false), account, folder, "SELECT")?, None)
     };
     let mut report = SyncReport::default();
 
@@ -154,10 +160,10 @@ pub fn sync_folder_as<S: Read + Write>(
                 if info.highest_modseq == st.highest_modseq {
                     Vec::new()
                 } else {
-                    c.uid_fetch(&range, "UID FLAGS", &format!("(CHANGEDSINCE {})", st.highest_modseq))?
+                    sync_stage(c.uid_fetch(&range, "UID FLAGS", &format!("(CHANGEDSINCE {})", st.highest_modseq)), account, folder, "UID FETCH FLAGS CHANGEDSINCE")?
                 }
             } else {
-                c.uid_fetch(&range, "UID FLAGS", "")?
+                sync_stage(c.uid_fetch(&range, "UID FLAGS", ""), account, folder, "UID FETCH FLAGS")?
             };
             for f in changed {
                 if let (Some(m), Some(fl)) = (st.find_mut(f.uid), &f.flags) {
@@ -169,7 +175,7 @@ pub fn sync_folder_as<S: Read + Write>(
                     m.modseq = m.modseq.max(f.modseq);
                 }
             }
-            let alive = c.uid_search(&format!("UID {range}"))?;
+            let alive = sync_stage(c.uid_search(&format!("UID {range}")), account, folder, "UID SEARCH cached range")?;
             let (kept, gone): (Vec<SharedSummary>, Vec<SharedSummary>) =
                 std::mem::take(&mut st.messages).into_iter().partition(|m| alive.binary_search(&m.key.uid).is_ok());
             if_kept(store, account, seen, || {
@@ -182,7 +188,7 @@ pub fn sync_folder_as<S: Read + Write>(
 
         // 2: new mail.
         if st.uid_next == 0 && known_max == 0 {
-            let all = c.uid_search("ALL")?;
+            let all = sync_stage(c.uid_search("ALL"), account, folder, "UID SEARCH ALL")?;
             let skip = all.len().saturating_sub(opts.window);
             let first: Vec<u32> = all.into_iter().skip(skip).collect();
             fetch_headers(c, &mut st, account, folder, &first, &mut report)?;
@@ -203,7 +209,7 @@ pub fn sync_folder_as<S: Read + Write>(
     report.fetched = prefetch(c, store, account, folder, &mut st, opts, seen)?;
 
     report.total = info.exists;
-    report.unread = if info.exists == 0 { 0 } else { u32::try_from(c.uid_search("UNSEEN")?.len()).unwrap_or(u32::MAX) };
+    report.unread = if info.exists == 0 { 0 } else { u32::try_from(sync_stage(c.uid_search("UNSEEN"), account, folder, "UID SEARCH UNSEEN")?.len()).unwrap_or(u32::MAX) };
     Ok(report)
 }
 
@@ -455,7 +461,7 @@ fn new_mail<S: Read + Write>(
 ) -> Result<()> {
     let from = st.uid_next.max(known_max.saturating_add(1)).max(1);
     // `n:*` always returns at least the last message (RFC 3501 §6.4.8): filter.
-    let uids: Vec<u32> = c.uid_search(&format!("UID {from}:*"))?.into_iter().filter(|u| *u >= from).collect();
+    let uids: Vec<u32> = sync_stage(c.uid_search(&format!("UID {from}:*")), account, folder, "UID SEARCH new mail")?.into_iter().filter(|u| *u >= from).collect();
     fetch_headers(c, st, account, folder, &uids, report)
 }
 
@@ -468,7 +474,7 @@ fn fetch_headers<S: Read + Write>(
     report: &mut SyncReport,
 ) -> Result<()> {
     for chunk in uid_chunks(uids, 200) {
-        for f in c.uid_fetch(&uid_set(&chunk), HEADER_ITEMS, "")? {
+        for f in sync_stage(c.uid_fetch(&uid_set(&chunk), HEADER_ITEMS, ""), account, folder, "UID FETCH headers")? {
             if st.find(f.uid).is_none() {
                 st.messages.push(summary(account, folder, st.validity, &f).into());
                 report.new += 1;
@@ -517,7 +523,7 @@ fn prefetch<S: Read + Write>(
     }
     let mut fetched = 0;
     for chunk in body_chunks(&wanted) {
-        for f in c.uid_fetch(&uid_set(&chunk), "UID BODY.PEEK[]", "")? {
+        for f in sync_stage(c.uid_fetch(&uid_set(&chunk), "UID BODY.PEEK[]", ""), account, folder, "UID FETCH body prefetch")? {
             let Some(raw) = &f.body else { continue };
             let Some(m) = st.find_mut(f.uid) else { continue };
             if_kept(store, account, seen, || store.write_body(&m.key, raw))?;
