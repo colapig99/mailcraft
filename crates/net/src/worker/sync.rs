@@ -242,7 +242,22 @@ impl Worker {
         if !self.relist() {
             return;
         }
-        let paths: Vec<String> = self.folders.iter().filter(|f| f.selectable).map(|f| f.path.clone()).collect();
+        // Public Folders are opt-in. Load the small per-account selection once
+        // per full sync; a folder LIST does not grant permission to SELECT it.
+        let selected: std::collections::BTreeSet<String> =
+            match self.store.load_account_doc(&self.acc.id, "public-folder-sync.json") {
+                Ok(selected) => selected,
+                Err(e) => {
+                    log::warn!("{}: Public Folder selection cannot be read; skipping all Public Folders: {e}", self.acc.id);
+                    std::collections::BTreeSet::new()
+                }
+            };
+        let paths: Vec<String> = self.folders.iter()
+            .filter(|f| f.selectable
+                && (!f.path.to_ascii_lowercase().starts_with("public folders/")
+                    || selected.contains(&f.path)))
+            .map(|f| f.path.clone())
+            .collect();
         // Counts are said as folders are synced, once a second at most: each time writes them
         // into the account's folder list, and says all of it.
         let mut said = Instant::now();
@@ -531,6 +546,13 @@ impl Worker {
     }
 
     pub(super) fn sync_one(&mut self, path: &str) {
+        if path.to_ascii_lowercase().starts_with("public folders/") {
+            let selected: std::collections::BTreeSet<String> =
+                self.store.load_account_doc(&self.acc.id, "public-folder-sync.json").unwrap_or_default();
+            if !selected.contains(path) {
+                return;
+            }
+        }
         if self.sync_counted(path) {
             self.counts_unsaid.push(path.to_string());
             self.say_counts();
