@@ -54,6 +54,9 @@ pub struct Prefs {
     pub tasks_hide_done: bool,
     /// Calendars left out of the calendar (`account/calendar id`), as Outlook's unticked ones.
     pub hidden_calendars: BTreeSet<String>,
+    /// IMAP Public Folders explicitly selected for synchronisation.
+    /// All Public Folders are off by default; regular mailboxes are unchanged.
+    pub public_folder_sync: BTreeSet<String>,
     /// Day and week show each calendar in a column of its own (Outlook's side-by-side view)
     /// rather than all of them together.
     pub calendars_side_by_side: bool,
@@ -266,6 +269,7 @@ impl Default for Prefs {
             tasks_order: pim::TasksOrder::Due,
             tasks_hide_done: false,
             hidden_calendars: BTreeSet::new(),
+            public_folder_sync: BTreeSet::new(),
             calendars_side_by_side: false,
             calendar_months: 1,
             address_book: "all".into(),
