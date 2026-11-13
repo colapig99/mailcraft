@@ -475,7 +475,7 @@ fn shared_header(
     {
         acts.push(Action::Run("mail.move", json!({"folder": top.path})));
     }
-    if public_enabled && let Some(p) = resp.dnd_release_payload::<DragFolder>()
+    if let Some(p) = resp.dnd_release_payload::<DragFolder>()
         && p.account == top.account
     {
         acts.push(Action::Run("folder.move", json!({"account": top.account, "folder": p.path, "parent": top.path})));
