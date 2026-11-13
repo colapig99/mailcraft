@@ -66,6 +66,13 @@ impl ListFilter {
 }
 
 impl Session {
+    /// Only explicitly selected IMAP Public Folders may be opened/synchronised.
+    /// This is an opt-in preference, not a replacement for server permissions.
+    pub fn public_folder_enabled(&self, account: &str, folder: &str) -> bool {
+        !folder.to_ascii_lowercase().starts_with("public folders/")
+            || self.prefs.public_folder_sync.contains(&format!("{account}|{folder}"))
+    }
+
     pub fn account(&self, id: &str) -> Option<&AccountState> {
         self.accounts.iter().find(|a| a.config.id == id)
     }
