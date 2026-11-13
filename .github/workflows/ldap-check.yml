@@ -2,7 +2,7 @@ name: Legacy LDAP compile and tests
 
 on:
   push:
-    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback, diagnostic/imap-sync-access-denied, fix/skip-denied-public-folder-sync, feature/manual-public-folder-selection]
+    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback, diagnostic/imap-sync-access-denied, fix/skip-denied-public-folder-sync, feature/manual-public-folder-selection, fix/account-scoped-store-locks]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +19,8 @@ jobs:
           components: rustfmt, clippy
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Test store locking and persistence
+        run: cargo test --locked -p mailcraft-store
       - name: Check net and engine
         run: cargo check --locked -p mailcraft-net -p mailcraft-engine
       - name: Check desktop UI crate
