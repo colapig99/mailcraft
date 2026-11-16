@@ -50,6 +50,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.0'
+      - name: Test HTML Excel table border regression
+        run: cargo test --locked -p mailcraft-mime excel_css_cell_borders_survive_layout
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
