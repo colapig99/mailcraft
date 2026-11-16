@@ -270,7 +270,10 @@ pub fn show(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>) {
                 }
                 for f in a.folders.iter().filter(|f| f.mailbox.is_none()) {
                     // Public Folders belong in a dedicated subtree below.
-                    if is_public_path(&f.path) || !s.public_folder_enabled(&f.account, &f.path) {
+                    if is_public_path(&f.path)
+                        || !s.public_folder_enabled(&f.account, &f.path)
+                        || !s.rss_folder_enabled(&f.account, &f.path)
+                    {
                         continue;
                     }
                     if hidden(f) {
