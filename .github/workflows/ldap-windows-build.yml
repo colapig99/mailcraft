@@ -23,6 +23,7 @@ on:
       - 'crates/store/src/merging.rs'
       - 'crates/engine/src/session/mailboxes.rs'
       - 'crates/ui-egui/src/dialogs/accounts.rs'
+      - 'crates/ui-egui/src/dialogs.rs'
       - 'crates/engine/src/cmd/accounts.rs'
       - 'crates/engine/src/session/pim.rs'
       - 'crates/engine/src/cmd/pim.rs'
