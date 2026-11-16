@@ -536,7 +536,8 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     // Unread counts matter for mail you receive, not for Sent or Drafts.
     let unread = if matches!(f.look(), FolderRole::Sent | FolderRole::Drafts | FolderRole::Trash | FolderRole::Archive) { 0 } else { f.unread };
     let user_folder = !f.is_fixed();
-    let is_public = f.path.to_ascii_lowercase().starts_with("public folders/");
+    let is_public = f.path.eq_ignore_ascii_case("Public Folders")
+        || f.path.to_ascii_lowercase().starts_with("public folders/");
     let public_enabled = s.public_folder_enabled(&f.account, &f.path);
     // Drafts says how many it holds, as Outlook's (a saved draft is never unread).
     let count = if f.look() == FolderRole::Drafts { Count::Items(f.total) } else { Count::Unread(unread) };
