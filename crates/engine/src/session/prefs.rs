@@ -59,6 +59,8 @@ pub struct Prefs {
     pub public_folder_sync: BTreeSet<String>,
     /// Accounts for which the Public Folders section is enabled (off by default).
     pub public_folders_enabled: BTreeSet<String>,
+    /// Accounts that display and synchronise RSS Feeds (off by default).
+    pub rss_feeds_enabled: BTreeSet<String>,
     /// Day and week show each calendar in a column of its own (Outlook's side-by-side view)
     /// rather than all of them together.
     pub calendars_side_by_side: bool,
@@ -273,6 +275,7 @@ impl Default for Prefs {
             hidden_calendars: BTreeSet::new(),
             public_folder_sync: BTreeSet::new(),
             public_folders_enabled: BTreeSet::new(),
+            rss_feeds_enabled: BTreeSet::new(),
             calendars_side_by_side: false,
             calendar_months: 1,
             address_book: "all".into(),
