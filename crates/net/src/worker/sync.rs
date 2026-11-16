@@ -244,6 +244,8 @@ impl Worker {
         }
         // Public Folders are opt-in. Load the small per-account selection once
         // per full sync; a folder LIST does not grant permission to SELECT it.
+        let public_enabled: bool =
+            self.store.load_account_doc(&self.acc.id, "public-folders-enabled.json").unwrap_or(false);
         let selected: std::collections::BTreeSet<String> =
             match self.store.load_account_doc(&self.acc.id, "public-folder-sync.json") {
                 Ok(selected) => selected,
@@ -255,7 +257,7 @@ impl Worker {
         let paths: Vec<String> = self.folders.iter()
             .filter(|f| f.selectable
                 && (!f.path.to_ascii_lowercase().starts_with("public folders/")
-                    || selected.contains(&f.path)))
+                    || (public_enabled && selected.contains(&f.path))))
             .map(|f| f.path.clone())
             .collect();
         // Counts are said as folders are synced, once a second at most: each time writes them
@@ -547,6 +549,10 @@ impl Worker {
 
     pub(super) fn sync_one(&mut self, path: &str) {
         if path.to_ascii_lowercase().starts_with("public folders/") {
+            let enabled: bool = self.store.load_account_doc(&self.acc.id, "public-folders-enabled.json").unwrap_or(false);
+            if !enabled {
+                return;
+            }
             let selected: std::collections::BTreeSet<String> =
                 self.store.load_account_doc(&self.acc.id, "public-folder-sync.json").unwrap_or_default();
             if !selected.contains(path) {
