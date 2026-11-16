@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// Recognise the RSS Feeds tree as returned by Exchange IMAP.
+fn is_rss_folder_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower == "rss feeds" || lower.starts_with("rss feeds/")
+}
+
 /// How often a full sync says the counts of the folders it has synced, at most.
 const COUNTS_EVERY: Duration = Duration::from_secs(1);
 
@@ -244,6 +250,8 @@ impl Worker {
         }
         // Public Folders are opt-in. Load the small per-account selection once
         // per full sync; a folder LIST does not grant permission to SELECT it.
+        let rss_enabled: bool =
+            self.store.load_account_doc(&self.acc.id, "rss-feeds-enabled.json").unwrap_or(false);
         let public_enabled: bool =
             self.store.load_account_doc(&self.acc.id, "public-folders-enabled.json").unwrap_or(false);
         let selected: std::collections::BTreeSet<String> =
@@ -256,6 +264,7 @@ impl Worker {
             };
         let paths: Vec<String> = self.folders.iter()
             .filter(|f| f.selectable
+                && (rss_enabled || !is_rss_folder_path(&f.path))
                 && (!f.path.to_ascii_lowercase().starts_with("public folders/")
                     || (public_enabled && selected.contains(&f.path))))
             .map(|f| f.path.clone())
@@ -548,6 +557,12 @@ impl Worker {
     }
 
     pub(super) fn sync_one(&mut self, path: &str) {
+        if is_rss_folder_path(path) {
+            let enabled: bool = self.store.load_account_doc(&self.acc.id, "rss-feeds-enabled.json").unwrap_or(false);
+            if !enabled {
+                return;
+            }
+        }
         if path.to_ascii_lowercase().starts_with("public folders/") {
             let enabled: bool = self.store.load_account_doc(&self.acc.id, "public-folders-enabled.json").unwrap_or(false);
             if !enabled {
