@@ -418,7 +418,7 @@ pub(super) fn draw(ui: &mut Ui, d: &mut Dialog, s: &Session, t: &Tokens, acts: &
             }
             !cancel
         }
-        Dialog::EditAccount(f) => edit_account(ui, f, t, acts),
+        Dialog::EditAccount(f) => edit_account(ui, f, s, t, acts),
         Dialog::AddSharedMailbox { account, address, error } => {
             ui.set_width(420.0);
             title(ui, t, "Add a shared mailbox");
@@ -716,6 +716,10 @@ pub struct EditForm {
     pub smtp_sign_in: SmtpSignIn,
     /// Keep none of its mail on this computer (issue #4; not for POP).
     pub online_only: bool,
+    /// Public Folders are hidden and never synchronised until explicitly enabled.
+    pub public_folders_enabled: bool,
+    pub public_folder_paths: std::collections::BTreeSet<String>,
+    pub public_folders_loaded: bool,
     pub error: Option<String>,
 }
 
@@ -724,6 +728,10 @@ impl EditForm {
         let mut p = self.server_params();
         if self.pop.is_none() {
             p["onlineOnly"] = json!(self.online_only);
+        }
+        if self.pop.is_none() && self.ews.is_none() && !self.jmap {
+            p["publicFoldersEnabled"] = json!(self.public_folders_enabled);
+            p["publicFolderPaths"] = json!(self.public_folder_paths);
         }
         p
     }
@@ -777,7 +785,15 @@ impl EditForm {
     }
 }
 
-pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, t: &Tokens, acts: &mut Vec<Action>) -> bool {
+pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, s: &Session, t: &Tokens, acts: &mut Vec<Action>) -> bool {
+    if !f.public_folders_loaded {
+        f.public_folders_enabled = s.prefs.public_folders_enabled.contains(&f.account);
+        let prefix = format!("{}|", f.account);
+        f.public_folder_paths = s.prefs.public_folder_sync.iter()
+            .filter_map(|key| key.strip_prefix(&prefix).map(str::to_string))
+            .collect();
+        f.public_folders_loaded = true;
+    }
     ui.set_width(480.0);
     title(ui, t, "Server settings");
     ui.label(RichText::new(&f.email).color(t.dim));
@@ -847,6 +863,34 @@ pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, t: &Tokens, acts: &mut
     }
     if f.pop.is_none() {
         online_only(ui, t, &mut f.online_only);
+    }
+    if f.pop.is_none() && f.ews.is_none() && !f.jmap {
+        ui.add_space(12.0);
+        ui.separator();
+        label(ui, "Public Folders");
+        ui.checkbox(&mut f.public_folders_enabled, "Enable Public Folders (hidden by default)");
+        if f.public_folders_enabled {
+            ui.label(RichText::new("Only checked subfolders are shown and synced. Other Public Folders are not opened.").color(t.dim).small());
+            let folders = s.account(&f.account).map(|a| &a.folders);
+            egui::ScrollArea::vertical().id_salt("public-folders-config")
+                .max_height(180.0).show(ui, |ui| {
+                    if let Some(folders) = folders {
+                        for folder in folders.iter().filter(|folder| {
+                            folder.path.to_ascii_lowercase().starts_with("public folders/") && folder.selectable
+                        }) {
+                            let mut selected = f.public_folder_paths.contains(&folder.path);
+                            if ui.checkbox(&mut selected, &folder.path).changed() {
+                                if selected {
+                                    f.public_folder_paths.insert(folder.path.clone());
+                                } else {
+                                    f.public_folder_paths.remove(&folder.path);
+                                }
+                            }
+                        }
+                    }
+                });
+            ui.label(RichText::new(format!("{} subfolder(s) selected", f.public_folder_paths.len())).color(t.dim).small());
+        }
     }
     if let Some(e) = &f.error {
         ui.add_space(6.0);
