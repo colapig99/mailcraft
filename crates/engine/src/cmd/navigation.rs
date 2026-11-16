@@ -4,6 +4,19 @@ use super::compose::{export_pdf, save_message};
 use super::*;
 use crate::session::Toward;
 
+/// Exchange IMAP Public Folders are view/sync-only in MailCraft.
+fn is_public_folder_path(path: &str) -> bool {
+    path.eq_ignore_ascii_case("Public Folders") || path.to_ascii_lowercase().starts_with("public folders/")
+}
+
+fn reject_public_folder_edit(path: &str) -> Result<(), CmdError> {
+    if is_public_folder_path(path) {
+        Err(CmdError::Disabled("Public Folders are read-only in MailCraft. Change their visibility in Account Settings.".into()))
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) fn commands() -> Vec<CommandSpec> {
     vec![
         // Send / Receive
@@ -69,25 +82,35 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         // Folder › Actions
         CommandSpec::new("folder.create", "New folder", "Folder › New", |s, v| {
             let account = account_param(s, v)?;
-            s.create_folder(&account, p::str(v, "parent").filter(|x| !x.is_empty()), p::req_str(v, "name")?)
+            let parent = p::str(v, "parent").filter(|x| !x.is_empty());
+            if let Some(parent) = parent { reject_public_folder_edit(parent)?; }
+            s.create_folder(&account, parent, p::req_str(v, "name")?)
         })
         .params(r#"{"name": string, "parent"?: string, "account"?: string}"#)
         .when(has_account),
         CommandSpec::new("folder.rename", "Rename folder", "Folder › Actions", |s, v| {
             let account = account_param(s, v)?;
-            s.rename_folder(&account, p::req_str(v, "folder")?, p::req_str(v, "name")?)
+            let folder = p::req_str(v, "folder")?;
+            reject_public_folder_edit(folder)?;
+            s.rename_folder(&account, folder, p::req_str(v, "name")?)
         })
         .params(r#"{"folder": string, "name": string, "account"?: string}"#)
         .when(has_account),
         CommandSpec::new("folder.move", "Move folder", "Folder › Actions", |s, v| {
             let account = account_param(s, v)?;
-            s.move_folder(&account, p::req_str(v, "folder")?, p::str(v, "parent").filter(|x| !x.is_empty()))
+            let folder = p::req_str(v, "folder")?;
+            let parent = p::str(v, "parent").filter(|x| !x.is_empty());
+            reject_public_folder_edit(folder)?;
+            if let Some(parent) = parent { reject_public_folder_edit(parent)?; }
+            s.move_folder(&account, folder, parent)
         })
         .params(r#"{"folder": string, "parent"?: string (empty or absent: top level), "account"?: string}"#)
         .when(has_account),
         CommandSpec::new("folder.delete", "Delete folder", "Folder › Actions", |s, v| {
             let account = account_param(s, v)?;
-            s.delete_folder(&account, p::req_str(v, "folder")?, p::bool(v, "permanent").unwrap_or(false))
+            let folder = p::req_str(v, "folder")?;
+            reject_public_folder_edit(folder)?;
+            s.delete_folder(&account, folder, p::bool(v, "permanent").unwrap_or(false))
         })
         .params(r#"{"folder": string, "permanent"?: bool, "account"?: string}"#)
         .when(has_account),
