@@ -2,7 +2,7 @@ name: Legacy Exchange Windows test build
 # Performance POC: persistent signed/sealed LDAP worker, indexed and historical alias search
 on:
   push:
-    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback, diagnostic/imap-sync-access-denied, fix/skip-denied-public-folder-sync, feature/manual-public-folder-selection, fix/account-scoped-store-locks, feature/public-folder-settings-panel, fix/public-folder-ui-safety, fix/public-folder-tree-and-lock-test]
+    branches: [feature/exchange-legacy-ldap, fix/sender-name-gal-fallback, diagnostic/imap-sync-access-denied, fix/skip-denied-public-folder-sync, feature/manual-public-folder-selection, fix/account-scoped-store-locks, feature/public-folder-settings-panel, fix/public-folder-ui-safety, fix/public-folder-tree-and-lock-test, feature/rss-feeds-visibility]
     paths:
       - '.github/workflows/ldap-windows-build.yml'
       - 'crates/engine/src/session/pim/directory.rs'
