@@ -407,6 +407,9 @@ impl Dialog {
             smtp_security: a.smtp.security,
             smtp_sign_in: SmtpSignIn::of(a),
             online_only: a.online_only,
+            public_folders_enabled: false,
+            public_folder_paths: std::collections::BTreeSet::new(),
+            public_folders_loaded: false,
             error: None,
         }))
     }
