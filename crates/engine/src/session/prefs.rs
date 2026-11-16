@@ -57,6 +57,8 @@ pub struct Prefs {
     /// IMAP Public Folders explicitly selected for synchronisation.
     /// All Public Folders are off by default; regular mailboxes are unchanged.
     pub public_folder_sync: BTreeSet<String>,
+    /// Accounts for which the Public Folders section is enabled (off by default).
+    pub public_folders_enabled: BTreeSet<String>,
     /// Day and week show each calendar in a column of its own (Outlook's side-by-side view)
     /// rather than all of them together.
     pub calendars_side_by_side: bool,
@@ -270,6 +272,7 @@ impl Default for Prefs {
             tasks_hide_done: false,
             hidden_calendars: BTreeSet::new(),
             public_folder_sync: BTreeSet::new(),
+            public_folders_enabled: BTreeSet::new(),
             calendars_side_by_side: false,
             calendar_months: 1,
             address_book: "all".into(),
