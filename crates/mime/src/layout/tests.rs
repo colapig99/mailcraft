@@ -441,7 +441,8 @@ fn excel_css_cell_borders_survive_layout() {
     <tr><td class="xl106" colspan="2">PCM</td></tr>
     <tr><td class="xl107">15:30</td><td>22:30</td></tr>
     </table></body></html>"##;
-    let blocks = html_layout(html);
+    // Production applies the message stylesheet before building the table layout.
+    let blocks = html_layout(&inline_css(html));
     let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
     let first = &table.rows[0][0];
     assert_eq!(first.span, 2);
