@@ -269,9 +269,8 @@ pub fn show(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>) {
                     ui.label(RichText::new(tl!("  Loading folders…")).color(t.faint).small());
                 }
                 for f in a.folders.iter().filter(|f| f.mailbox.is_none()) {
-                    // Unselected Public Folders are not visible, even if the
-                    // IMAP server advertises them in LIST.
-                    if !s.public_folder_enabled(&f.account, &f.path) {
+                    // Public Folders belong in a dedicated subtree below.
+                    if is_public_path(&f.path) || !s.public_folder_enabled(&f.account, &f.path) {
                         continue;
                     }
                     if hidden(f) {
@@ -280,6 +279,7 @@ pub fn show(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>) {
                     let collapse = parents.contains(&f.path).then(|| s.prefs.collapsed.contains(&folder_key(&f.account, &f.path)));
                     folder_row(s, t, ui, acts, f, f.depth() + 1, false, collapse);
                 }
+                public_folder_tree(s, t, ui, acts, a);
                 // The folders its import will bring in, not in yet.
                 crate::app::importing::outline(s, t, ui, &a.config.id, &a.folders);
                 ui.add_space(6.0);
@@ -287,6 +287,73 @@ pub fn show(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>) {
         }
         search_folders(s, t, ui, acts);
     });
+}
+
+/// A Public Folder is shown only after the account enables it and the
+/// corresponding leaf was selected in Account Settings. Its missing or
+/// unselected ancestors are navigation-only nodes, not IMAP SELECT targets.
+fn is_public_path(path: &str) -> bool {
+    path.eq_ignore_ascii_case("Public Folders") || path.to_ascii_lowercase().starts_with("public folders/")
+}
+
+fn public_folder_tree(
+    s: &Session,
+    t: &Tokens,
+    ui: &mut Ui,
+    acts: &mut Vec<Action>,
+    a: &mailcraft_engine::AccountState,
+) {
+    if !s.prefs.public_folders_enabled.contains(&a.config.id) {
+        return;
+    }
+    let selected: Vec<&Folder> = a.folders.iter()
+        .filter(|f| f.mailbox.is_none() && f.selectable
+            && f.path.to_ascii_lowercase().starts_with("public folders/")
+            && s.public_folder_enabled(&f.account, &f.path))
+        .collect();
+    if selected.is_empty() {
+        return;
+    }
+    // Include parent paths, even if Exchange only sent the selected
+    // children in LIST. Only selected leaves are openable/syncable.
+    let mut nodes: std::collections::BTreeMap<String, Option<&Folder>> = std::collections::BTreeMap::new();
+    nodes.insert("Public Folders".into(), None);
+    for f in selected {
+        for ancestor in ancestors(f) {
+            if is_public_path(&ancestor) {
+                nodes.entry(ancestor).or_insert(None);
+            }
+        }
+        nodes.insert(f.path.clone(), Some(f));
+    }
+    for (path, selected_folder) in &nodes {
+        let depth = path.split('/').count();
+        let collapsed = s.prefs.collapsed.contains(&folder_key(&a.config.id, path));
+        let has_children = nodes.keys().any(|other| other.starts_with(&format!("{path}/")));
+        if path.split('/').scan(String::new(), |prefix, part| {
+            if !prefix.is_empty() { prefix.push('/'); }
+            prefix.push_str(part);
+            Some(prefix.clone())
+        }).take(depth.saturating_sub(1)).any(|parent| s.prefs.collapsed.contains(&folder_key(&a.config.id, &parent))) {
+            continue;
+        }
+        if let Some(f) = selected_folder {
+            folder_row(s, t, ui, acts, f, depth, false, has_children.then_some(collapsed));
+        } else {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            let resp = row(ui, t, Icon::Folder, name, Count::Unread(0), depth, false, false, false);
+            if has_children {
+                let x = resp.rect.min.x + 10.0 + depth as f32 * 14.0 - 14.0;
+                let m = crate::bidi::Mirror::new(resp.rect);
+                let chev = m.rect(egui::Rect::from_min_size(egui::pos2(x, resp.rect.center().y - 6.0), vec2(12.0, 12.0)));
+                let click = ui.interact(chev.expand(4.0), resp.id.with("collapse"), Sense::click());
+                icons::paint(ui.painter(), chev, if collapsed { m.closed() } else { Icon::ChevronDown }, t.dim);
+                if resp.clicked() || click.clicked() {
+                    acts.push(Action::Run("view.collapse", json!({"key": folder_key(&a.config.id, path)})));
+                }
+            }
+        }
+    }
 }
 
 /// Search Folders, after the mailboxes: each a saved search, opened with a click; New Search
@@ -541,12 +608,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     let public_enabled = s.public_folder_enabled(&f.account, &f.path);
     // Drafts says how many it holds, as Outlook's (a saved draft is never unread).
     let count = if f.look() == FolderRole::Drafts { Count::Items(f.total) } else { Count::Unread(unread) };
-    let shown_name = if is_public && f.selectable {
-        format!("☑  {name}")
-    } else {
-        name.clone()
-    };
-    let resp = row(ui, t, role_icon(f.look()), &shown_name, count, depth, selected, f.selectable && public_enabled, user_folder && !favorite);
+    let resp = row(ui, t, role_icon(f.look()), &name, count, depth, selected, f.selectable && public_enabled, user_folder && !favorite);
     if let Some(collapsed) = collapse {
         let x = resp.rect.min.x + 10.0 + depth as f32 * 14.0 - 14.0;
         let m = crate::bidi::Mirror::new(resp.rect);
