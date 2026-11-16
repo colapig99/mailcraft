@@ -430,3 +430,25 @@ fn outlooks_copy_is_written_again_only_when_the_tree_reads_otherwise() {
 }
 
 mod buttons;
+
+/// Excel 9 reports keep table borders in CSS classes while table border is zero.
+#[test]
+fn excel_css_cell_borders_survive_layout() {
+    let html = r##"<html><head><style>
+    .xl106 {border:.5pt solid windowtext;background:#ffff99;text-align:center}
+    .xl107 {border-bottom:.5pt solid windowtext;border-right:.5pt solid windowtext}
+    </style></head><body><table border="0" cellspacing="0">
+    <tr><td class="xl106" colspan="2">PCM</td></tr>
+    <tr><td class="xl107">15:30</td><td>22:30</td></tr>
+    </table></body></html>"##;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let first = &table.rows[0][0];
+    assert_eq!(first.span, 2);
+    assert_eq!(first.background, Some([255, 255, 153]));
+    assert_eq!(first.borders.top, Some(Border { width: 1, color: [0, 0, 0] }));
+    assert_eq!(first.borders.left, first.borders.top);
+    assert_eq!(table.rows[1][0].borders.bottom, first.borders.top);
+    assert_eq!(table.rows[1][0].borders.top, None);
+    assert_eq!(table.rows[1][1].borders, Borders::default());
+}

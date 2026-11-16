@@ -111,11 +111,27 @@ pub struct Table {
     pub radius: Option<u16>,
 }
 
+/// A solid CSS cell border, in screen pixels and RGB.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Border { pub width: u8, pub color: [u8; 3] }
+
+/// Sender-defined cell edges; no implicit grid for layout tables.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Borders {
+    pub top: Option<Border>,
+    pub right: Option<Border>,
+    pub bottom: Option<Border>,
+    pub left: Option<Border>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cell {
     pub blocks: Vec<Block>,
     pub width: Option<Width>,
     pub background: Option<[u8; 3]>,
+    /// CSS borders, including separate Excel cell edges.
+    #[serde(default)]
+    pub borders: Borders,
     /// How its content lines up.
     pub align: Align,
     /// Columns it spans.

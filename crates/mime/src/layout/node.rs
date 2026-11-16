@@ -26,6 +26,26 @@ impl Node {
         })
     }
 
+    /// Borders from inlined CSS classes and the cell's own style.
+    pub(super) fn borders(&self) -> Borders {
+        fn solid(v: &str) -> Option<Border> {
+            let words: Vec<&str> = v.split_whitespace().collect();
+            if !words.iter().any(|w| w.eq_ignore_ascii_case("solid")) { return None; }
+            let width = words.iter().filter_map(|w| length_px(w))
+                .find(|px| px.is_finite() && *px > 0.0)
+                .map_or(1, |px| px.ceil().clamp(1.0, 8.0) as u8);
+            let color = words.iter().find_map(|w| {
+                if w.eq_ignore_ascii_case("windowtext") || w.eq_ignore_ascii_case("currentcolor") {
+                    Some([0, 0, 0])
+                } else { color(&w.to_ascii_lowercase()) }
+            }).unwrap_or([0, 0, 0]);
+            Some(Border { width, color })
+        }
+        let all = self.style("border").and_then(|s| solid(&s));
+        let edge = |prop: &str| self.style(prop).map(|s| solid(&s)).unwrap_or(all);
+        Borders { top: edge("border-top"), right: edge("border-right"), bottom: edge("border-bottom"), left: edge("border-left") }
+    }
+
     /// The picture behind it: the `background` attribute, or `url(…)` in `background-image` or
     /// `background`. Web, `cid:` and `data:` addresses only (nothing that runs).
     pub(super) fn background_image(&self) -> Option<String> {

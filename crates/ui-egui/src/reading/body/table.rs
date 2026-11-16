@@ -62,6 +62,7 @@ impl Body<'_> {
                 });
                 let rect = framed.response.rect;
                 ui.painter().set(framed.inner, backdrop(rect, c.radius, fill, behind.as_ref()));
+                paint_borders(ui.painter(), rect, c.borders);
                 // Boxes placed over it; the cell grows to hold any that reach past its end.
                 let mut bottom = rect.bottom();
                 for o in &c.overlays {
@@ -100,6 +101,20 @@ impl Body<'_> {
             ui.ctx().request_repaint();
         }
     }
+}
+
+/// Paint only the four explicitly styled cell edges.
+fn paint_borders(painter: &egui::Painter, rect: egui::Rect, b: mime::layout::Borders) {
+    let edge = |a, z, border: Option<mime::layout::Border>| {
+        if let Some(border) = border {
+            let c = border.color;
+            painter.line_segment([a, z], egui::Stroke::new(f32::from(border.width), Color32::from_rgb(c[0], c[1], c[2])));
+        }
+    };
+    edge(rect.left_top(), rect.right_top(), b.top);
+    edge(rect.right_top(), rect.right_bottom(), b.right);
+    edge(rect.left_bottom(), rect.right_bottom(), b.bottom);
+    edge(rect.left_top(), rect.left_bottom(), b.left);
 }
 
 /// A box's colour and the picture behind it, filling `rect` with corners `radius` round, at most
