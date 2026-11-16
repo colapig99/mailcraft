@@ -872,22 +872,29 @@ pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, s: &Session, t: &Token
         if f.public_folders_enabled {
             ui.label(RichText::new("Only checked subfolders are shown and synced. Other Public Folders are not opened.").color(t.dim).small());
             let folders = s.account(&f.account).map(|a| &a.folders);
-            egui::ScrollArea::vertical().id_salt("public-folders-config")
-                .max_height(180.0).show(ui, |ui| {
-                    if let Some(folders) = folders {
-                        for folder in folders.iter().filter(|folder| {
-                            folder.path.to_ascii_lowercase().starts_with("public folders/") && folder.selectable
-                        }) {
-                            let mut selected = f.public_folder_paths.contains(&folder.path);
-                            if ui.checkbox(&mut selected, folder.path.as_str()).changed() {
-                                if selected {
-                                    f.public_folder_paths.insert(folder.path.clone());
-                                } else {
-                                    f.public_folder_paths.remove(&folder.path);
+            // A thin black outline separates the Public Folder selection
+            // from the rest of the account settings, including in light mode.
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK))
+                .inner_margin(Margin::same(6))
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("public-folders-config")
+                        .max_height(180.0).show(ui, |ui| {
+                            if let Some(folders) = folders {
+                                for folder in folders.iter().filter(|folder| {
+                                    folder.path.to_ascii_lowercase().starts_with("public folders/") && folder.selectable
+                                }) {
+                                    let mut selected = f.public_folder_paths.contains(&folder.path);
+                                    if ui.checkbox(&mut selected, folder.path.as_str()).changed() {
+                                        if selected {
+                                            f.public_folder_paths.insert(folder.path.clone());
+                                        } else {
+                                            f.public_folder_paths.remove(&folder.path);
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
+                        });
                 });
             ui.label(RichText::new(format!("{} subfolder(s) selected", f.public_folder_paths.len())).color(t.dim).small());
         }
