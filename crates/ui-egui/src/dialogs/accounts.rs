@@ -879,7 +879,7 @@ pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, s: &Session, t: &Token
                             folder.path.to_ascii_lowercase().starts_with("public folders/") && folder.selectable
                         }) {
                             let mut selected = f.public_folder_paths.contains(&folder.path);
-                            if ui.checkbox(&mut selected, &folder.path).changed() {
+                            if ui.checkbox(&mut selected, folder.path.as_str()).changed() {
                                 if selected {
                                     f.public_folder_paths.insert(folder.path.clone());
                                 } else {
