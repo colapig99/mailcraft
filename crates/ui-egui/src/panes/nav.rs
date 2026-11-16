@@ -596,7 +596,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
         }
         // Delete All, as Outlook's: Deleted Items and Junk are emptied for good, any other
         // folder's mail goes to Deleted Items.
-        if f.selectable && public_enabled && ui.button(tl!("Delete all…")).clicked() {
+        if !is_public && f.selectable && public_enabled && ui.button(tl!("Delete all…")).clicked() {
             acts.push(Action::Dialog(Dialog::ConfirmEmpty {
                 account: account.clone(),
                 folder: path.clone(),
@@ -606,11 +606,14 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
             ui.close();
         }
         ui.separator();
-        if ui.button(tl!("New folder…")).clicked() {
+        // Exchange Public Folders are read-only in MailCraft's folder UI.
+        // Their visibility and selection are managed from Account Settings;
+        // never offer server-side CREATE / RENAME / MOVE / DELETE here.
+        if !is_public && ui.button(tl!("New folder…")).clicked() {
             acts.push(Action::Dialog(Dialog::new_folder(&account, Some(&path))));
             ui.close();
         }
-        if user_folder {
+        if user_folder && !is_public {
             if ui.button(tl!("Rename folder…")).clicked() {
                 acts.push(Action::Dialog(Dialog::rename_folder(f)));
                 ui.close();
