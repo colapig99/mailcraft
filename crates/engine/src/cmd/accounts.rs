@@ -379,7 +379,13 @@ pub(super) fn update_account(s: &mut Session, v: &Value) -> CmdResult {
     } else {
         None
     };
+    let rss_enabled = p::bool(v, "rssFeedsEnabled");
     let smtp_password = smtp_sign_in(v, &mut c, false)?;
+    if let Some(enabled) = rss_enabled {
+        let store = s.store.as_ref().ok_or_else(|| CmdError::Disabled("mail data unavailable".into()))?;
+        store.save_account_doc(id, "rss-feeds-enabled.json", &enabled)
+            .map_err(|e| CmdError::Failed(format!("RSS Feeds setting save failed: {e}")))?;
+    }
     if let Some((enabled, selected)) = &public_config {
         let store = s.store.as_ref().ok_or_else(|| CmdError::Disabled("mail data unavailable".into()))?;
         store.save_account_doc(id, "public-folder-sync.json", selected)
@@ -396,6 +402,13 @@ pub(super) fn update_account(s: &mut Session, v: &Value) -> CmdResult {
             s.prefs.public_folders_enabled.insert(id.to_string());
         } else {
             s.prefs.public_folders_enabled.remove(id);
+        }
+    }
+    if let Some(enabled) = rss_enabled {
+        if enabled {
+            s.prefs.rss_feeds_enabled.insert(id.to_string());
+        } else {
+            s.prefs.rss_feeds_enabled.remove(id);
         }
     }
     if let Some(pw) = smtp_password {
