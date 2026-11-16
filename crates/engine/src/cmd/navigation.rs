@@ -301,7 +301,7 @@ pub(super) fn sync_folder(s: &mut Session, _: &Value) -> CmdResult {
         View::Empty | View::Outbox => Vec::new(),
     };
     for (account, folder) in folders {
-        if s.account(&account).is_some_and(|a| !a.is_local()) && s.public_folder_enabled(&account, &folder) {
+        if s.account(&account).is_some_and(|a| !a.is_local()) && s.public_folder_enabled(&account, &folder) && s.rss_folder_enabled(&account, &folder) {
             s.push_job(mailcraft_model::Job::SyncFolder { account, folder });
             n += 1;
         }
@@ -317,6 +317,9 @@ pub(super) fn open_folder(s: &mut Session, v: &Value) -> CmdResult {
     }
     if !s.public_folder_enabled(&account, &folder) {
         return Err(CmdError::Disabled("Select this Public Folder for syncing before opening it".into()));
+    }
+    if !s.rss_folder_enabled(&account, &folder) {
+        return Err(CmdError::Disabled("Enable RSS Feeds in Account Settings before opening it".into()));
     }
     s.open_view(View::Folder { account, folder });
     Ok(json!({"messages": s.list.len()}))
