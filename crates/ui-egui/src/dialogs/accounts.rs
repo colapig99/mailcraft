@@ -718,6 +718,7 @@ pub struct EditForm {
     pub online_only: bool,
     /// Public Folders are hidden and never synchronised until explicitly enabled.
     pub public_folders_enabled: bool,
+    pub rss_feeds_enabled: bool,
     pub public_folder_paths: std::collections::BTreeSet<String>,
     pub public_folders_loaded: bool,
     pub error: Option<String>,
@@ -731,6 +732,7 @@ impl EditForm {
         }
         if self.pop.is_none() && self.ews.is_none() && !self.jmap {
             p["publicFoldersEnabled"] = json!(self.public_folders_enabled);
+            p["rssFeedsEnabled"] = json!(self.rss_feeds_enabled);
             p["publicFolderPaths"] = json!(self.public_folder_paths);
         }
         p
@@ -788,6 +790,7 @@ impl EditForm {
 pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, s: &Session, t: &Tokens, acts: &mut Vec<Action>) -> bool {
     if !f.public_folders_loaded {
         f.public_folders_enabled = s.prefs.public_folders_enabled.contains(&f.account);
+        f.rss_feeds_enabled = s.prefs.rss_feeds_enabled.contains(&f.account);
         let prefix = format!("{}|", f.account);
         f.public_folder_paths = s.prefs.public_folder_sync.iter()
             .filter_map(|key| key.strip_prefix(&prefix).map(str::to_string))
@@ -898,6 +901,13 @@ pub(super) fn edit_account(ui: &mut Ui, f: &mut EditForm, s: &Session, t: &Token
                 });
             ui.label(RichText::new(format!("{} subfolder(s) selected", f.public_folder_paths.len())).color(t.dim).small());
         }
+    }
+    if f.pop.is_none() && f.ews.is_none() && !f.jmap {
+        ui.add_space(12.0);
+        ui.separator();
+        label(ui, "RSS Feeds");
+        ui.checkbox(&mut f.rss_feeds_enabled, "Enable RSS Feeds (hidden by default)");
+        ui.label(RichText::new("When disabled, RSS Feeds and its children are hidden and excluded from automatic mail synchronisation.").color(t.dim).small());
     }
     if let Some(e) = &f.error {
         ui.add_space(6.0);
