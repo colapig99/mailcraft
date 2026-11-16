@@ -68,6 +68,17 @@ impl ListFilter {
 impl Session {
     /// Only explicitly selected IMAP Public Folders may be opened/synchronised.
     /// This is an opt-in preference, not a replacement for server permissions.
+    /// RSS feeds are an optional IMAP folder tree. Disable by default to
+    /// avoid fetching its contents in legacy Exchange installations.
+    pub fn rss_folder_enabled(&self, account: &str, folder: &str) -> bool {
+        !Self::is_rss_folder_path(folder) || self.prefs.rss_feeds_enabled.contains(account)
+    }
+
+    pub fn is_rss_folder_path(path: &str) -> bool {
+        let lower = path.to_ascii_lowercase();
+        lower == "rss feeds" || lower.starts_with("rss feeds/")
+    }
+
     pub fn public_folder_enabled(&self, account: &str, folder: &str) -> bool {
         let public_root = folder.eq_ignore_ascii_case("Public Folders");
         let public_child = folder.to_ascii_lowercase().starts_with("public folders/");
