@@ -269,6 +269,11 @@ pub fn show(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>) {
                     ui.label(RichText::new(tl!("  Loading folders…")).color(t.faint).small());
                 }
                 for f in a.folders.iter().filter(|f| f.mailbox.is_none()) {
+                    // Unselected Public Folders are not visible, even if the
+                    // IMAP server advertises them in LIST.
+                    if !s.public_folder_enabled(&f.account, &f.path) {
+                        continue;
+                    }
                     if hidden(f) {
                         continue;
                     }
@@ -536,7 +541,7 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     // Drafts says how many it holds, as Outlook's (a saved draft is never unread).
     let count = if f.look() == FolderRole::Drafts { Count::Items(f.total) } else { Count::Unread(unread) };
     let shown_name = if is_public && f.selectable {
-        format!("{}  {}", if public_enabled { "☑" } else { "☐" }, name)
+        format!("☑  {name}")
     } else {
         name.clone()
     };
@@ -575,14 +580,6 @@ fn folder_row(s: &Session, t: &Tokens, ui: &mut Ui, acts: &mut Vec<Action>, f: &
     let account = f.account.clone();
     let is_favorite = s.favorites().iter().any(|r| r.account == f.account && r.folder == f.path);
     resp.context_menu(|ui| {
-        if is_public && f.selectable {
-            let mut enabled = public_enabled;
-            if ui.checkbox(&mut enabled, "Sync this Public Folder").changed() {
-                acts.push(Action::Run("folder.publicSync", json!({"account": account, "folder": path, "on": enabled})));
-                ui.close();
-            }
-            ui.separator();
-        }
         if ui.add_enabled(public_enabled, egui::Button::new(tl!("Open"))).clicked() {
             acts.push(Action::Run("folder.open", json!({"account": account, "folder": path})));
             ui.close();
