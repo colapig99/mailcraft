@@ -70,7 +70,8 @@ impl Session {
     /// This is an opt-in preference, not a replacement for server permissions.
     pub fn public_folder_enabled(&self, account: &str, folder: &str) -> bool {
         !folder.to_ascii_lowercase().starts_with("public folders/")
-            || self.prefs.public_folder_sync.contains(&format!("{account}|{folder}"))
+            || (self.prefs.public_folders_enabled.contains(account)
+                && self.prefs.public_folder_sync.contains(&format!("{account}|{folder}")))
     }
 
     pub fn account(&self, id: &str) -> Option<&AccountState> {
