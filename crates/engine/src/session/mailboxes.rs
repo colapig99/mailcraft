@@ -69,9 +69,17 @@ impl Session {
     /// Only explicitly selected IMAP Public Folders may be opened/synchronised.
     /// This is an opt-in preference, not a replacement for server permissions.
     pub fn public_folder_enabled(&self, account: &str, folder: &str) -> bool {
-        !folder.to_ascii_lowercase().starts_with("public folders/")
-            || (self.prefs.public_folders_enabled.contains(account)
-                && self.prefs.public_folder_sync.contains(&format!("{account}|{folder}")))
+        let public_root = folder.eq_ignore_ascii_case("Public Folders");
+        let public_child = folder.to_ascii_lowercase().starts_with("public folders/");
+        if public_root {
+            self.prefs.public_folders_enabled.contains(account)
+                && self.prefs.public_folder_sync.iter().any(|key| key.starts_with(&format!("{account}|")))
+        } else if public_child {
+            self.prefs.public_folders_enabled.contains(account)
+                && self.prefs.public_folder_sync.contains(&format!("{account}|{folder}"))
+        } else {
+            true
+        }
     }
 
     pub fn account(&self, id: &str) -> Option<&AccountState> {
