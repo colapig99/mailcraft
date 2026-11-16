@@ -358,8 +358,46 @@ pub(super) fn update_account(s: &mut Session, v: &Value) -> CmdResult {
     if let Some(on) = p::bool(v, "onlineOnly") {
         c.online_only = on;
     }
+    // Validate and persist the Public Folder selection before restarting the
+    // account. No IMAP SELECT is attempted by this configuration change.
+    let public_config = if let Some(enabled) = p::bool(v, "publicFoldersEnabled") {
+        let paths = v.get("publicFolderPaths")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| CmdError::Params("publicFolderPaths must be an array".into()))?;
+        let mut selected = std::collections::BTreeSet::new();
+        for path in paths {
+            let path = path.as_str().ok_or_else(|| CmdError::Params("Public Folder paths must be strings".into()))?;
+            if !path.to_ascii_lowercase().starts_with("public folders/")
+                || path.len() > 1024
+                || s.folder(id, path).is_none()
+            {
+                return Err(CmdError::Params(format!("invalid Public Folder path: {path}")));
+            }
+            selected.insert(path.to_string());
+        }
+        Some((enabled, selected))
+    } else {
+        None
+    };
     let smtp_password = smtp_sign_in(v, &mut c, false)?;
+    if let Some((enabled, selected)) = &public_config {
+        let store = s.store.as_ref().ok_or_else(|| CmdError::Disabled("mail data unavailable".into()))?;
+        store.save_account_doc(id, "public-folder-sync.json", selected)
+            .map_err(|e| CmdError::Failed(format!("Public Folder selection save failed: {e}")))?;
+        store.save_account_doc(id, "public-folders-enabled.json", enabled)
+            .map_err(|e| CmdError::Failed(format!("Public Folder enable setting save failed: {e}")))?;
+    }
     let done = s.update_account(c, None)?;
+    if let Some((enabled, selected)) = public_config {
+        let prefix = format!("{id}|");
+        s.prefs.public_folder_sync.retain(|k| !k.starts_with(&prefix));
+        s.prefs.public_folder_sync.extend(selected.into_iter().map(|path| format!("{id}|{path}")));
+        if enabled {
+            s.prefs.public_folders_enabled.insert(id.to_string());
+        } else {
+            s.prefs.public_folders_enabled.remove(id);
+        }
+    }
     if let Some(pw) = smtp_password {
         s.keep_smtp_password(id, pw);
     }
