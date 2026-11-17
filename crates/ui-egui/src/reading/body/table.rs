@@ -140,6 +140,61 @@ pub(crate) fn corner(radius: Option<u16>, rect: egui::Rect) -> egui::CornerRadiu
     egui::CornerRadius::same(r.round() as u8)
 }
 
+/// Expand HTML rowspan occupancy only for painting and measuring. Source
+/// cells remain unchanged for EML storage, replies, and forwards.
+/// Continuations cover the same logical columns without repeating text or
+/// drawing an internal border through a merged cell.
+pub(crate) fn expand_rowspans(rows: &[Vec<mime::layout::Cell>]) -> Vec<Vec<mime::layout::Cell>> {
+    // Start column, rows remaining, original cell. Bounded by the HTML parser.
+    let mut pending: Vec<(usize, u16, mime::layout::Cell)> = Vec::new();
+    let mut expanded = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut output = Vec::with_capacity(row.len() + pending.len());
+        let mut next = Vec::new();
+        let mut column = 0usize;
+        let mut occupied = pending.iter().peekable();
+        let mut insert_pending = |at: &mut usize, out: &mut Vec<mime::layout::Cell>, next: &mut Vec<(usize, u16, mime::layout::Cell)>| {
+            while occupied.peek().is_some_and(|(start, _, _)| *start == *at) {
+                let (start, left, original) = occupied.next().expect("checked above");
+                let mut continuation = original.clone();
+                continuation.blocks.clear();
+                continuation.overlays.clear();
+                continuation.rowspan = 1;
+                continuation.height = None;
+                continuation.nowrap = false;
+                continuation.borders.top = None;
+                if *left > 1 {
+                    continuation.borders.bottom = None;
+                    next.push((*start, *left - 1, original.clone()));
+                }
+                out.push(continuation);
+                *at += usize::from(original.span.max(1));
+            }
+        };
+        for cell in row {
+            insert_pending(&mut column, &mut output, &mut next);
+            if column >= 64 { break; }
+            let span = usize::from(cell.span.max(1));
+            if cell.rowspan > 1 {
+                next.push((column, cell.rowspan - 1, cell.clone()));
+            }
+            let mut top = cell.clone();
+            if cell.rowspan > 1 {
+                top.borders.bottom = None;
+            }
+            output.push(top);
+            column = column.saturating_add(span);
+        }
+        insert_pending(&mut column, &mut output, &mut next);
+        // If malformed HTML leaves gaps before a spanning cell, keep the
+        // renderer safe rather than attempting to infer nonexistent cells.
+        next.sort_by_key(|(start, _, _)| *start);
+        pending = next;
+        expanded.push(output);
+    }
+    expanded
+}
+
 /// Resolve a fully specified Word/Excel column grid once for the whole table.
 /// For partially defined grids use the existing content-driven layout.
 pub(crate) fn shared_column_widths(
