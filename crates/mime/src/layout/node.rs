@@ -105,6 +105,19 @@ impl Node {
         // A style a browser can't read (a unit it doesn't know) leaves the attribute's; `auto`
         // and the like set none.
         let styled = self.style("width");
+        // Word 12 occasionally emits both a pixel width attribute and a
+        // conflicting point width (~80% as wide) on the same report table.
+        // Prefer its HTML pixel grid only for this identifiable Word pattern;
+        // otherwise preserve normal CSS width precedence.
+        if self.tag == "table"
+            && self.attr("class").is_some_and(|c| c.split_whitespace().any(|n| n.eq_ignore_ascii_case("MsoNormalTable")))
+            && styled.as_deref().is_some_and(|s| s.trim().ends_with("pt"))
+            && let (Some(Width::Px(attr)), Some(Width::Px(css))) =
+                (self.attr("width").and_then(parse_width), styled.as_deref().and_then(parse_width))
+            && attr > css.saturating_add(css / 6)
+        {
+            return Some(Width::Px(attr));
+        }
         let own = match styled.as_deref().map(str::trim) {
             Some("auto" | "inherit" | "initial" | "unset" | "fit-content" | "max-content" | "min-content") => None,
             Some(v) => parse_width(v).or_else(|| self.attr("width").and_then(parse_width)),
