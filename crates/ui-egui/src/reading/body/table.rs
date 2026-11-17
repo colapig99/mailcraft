@@ -195,6 +195,54 @@ pub(crate) fn expand_rowspans(rows: &[Vec<mime::layout::Cell>]) -> Vec<Vec<mime:
     expanded
 }
 
+/// Collapse only shared CSS borders, without introducing a border on
+/// unstyled layout tables. The wider line wins; ties keep the preceding cell.
+/// Unlike painting both strokes, this gives adjoining cells one common edge.
+pub(crate) fn collapse_shared_borders(rows: &mut [Vec<mime::layout::Cell>]) {
+    fn pick(a: Option<mime::layout::Border>, b: Option<mime::layout::Border>) -> Option<mime::layout::Border> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(if b.width > a.width { b } else { a }),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+    // Vertical seams between neighboring cells in a row.
+    for row in rows.iter_mut() {
+        for i in 0..row.len().saturating_sub(1) {
+            let (left, right) = row.split_at_mut(i + 1);
+            let a = &mut left[i];
+            let b = &mut right[0];
+            a.borders.right = pick(a.borders.right, b.borders.left);
+            b.borders.left = None;
+        }
+    }
+    // Horizontal seams only where neighboring cells cover exactly the same
+    // logical column range. Split/merged intersections retain their sender
+    // edges, avoiding incorrectly removing portions of a colspan boundary.
+    for ri in 0..rows.len().saturating_sub(1) {
+        let (top_rows, bottom_rows) = rows.split_at_mut(ri + 1);
+        let upper = &mut top_rows[ri];
+        let lower = &mut bottom_rows[0];
+        let mut left = 0usize;
+        for above in upper.iter_mut() {
+            let end = left + usize::from(above.span.max(1));
+            let mut start = 0usize;
+            for below in lower.iter_mut() {
+                let below_end = start + usize::from(below.span.max(1));
+                if start == left && below_end == end {
+                    above.borders.bottom = pick(above.borders.bottom, below.borders.top);
+                    below.borders.top = None;
+                    break;
+                }
+                start = below_end;
+                if start >= end { break; }
+            }
+            left = end;
+        }
+    }
+}
+
 /// Resolve a fully specified Word/Excel column grid once for the whole table.
 /// For partially defined grids use the existing content-driven layout.
 pub(crate) fn shared_column_widths(
