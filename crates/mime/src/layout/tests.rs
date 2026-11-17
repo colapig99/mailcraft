@@ -476,3 +476,22 @@ fn word_report_keeps_empty_spacer_cells() {
     assert!(table.rows[1][5].blocks.is_empty());
     assert_eq!(table.rows[0][6].background, Some([255, 255, 153]));
 }
+
+/// Word 12 reports store contradictory widths: table width="722" but
+/// style="width:433.2pt" (~578 px). Preserve the original pixel table grid,
+/// while leaving non-Word tables and unrelated CSS precedence unchanged.
+#[test]
+fn word_12_conflicting_table_width_keeps_original_pixel_grid() {
+    let word = r#"<table class="MsoNormalTable" width="722" style="width:433.2pt;border-collapse:collapse"><tr><td width="81">PP+Carry</td><td width="134">4,13,19,42</td></tr></table>"#;
+    let blocks = html_layout(word);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    assert_eq!(t.width, Some(Width::Px(722)));
+    let normal = r#"<table width="722" style="width:433.2pt"><tr><td>One</td><td>Two</td></tr></table>"#;
+    let blocks = html_layout(normal);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    assert_eq!(t.width, Some(Width::Px(577)));
+    let ordinary = r#"<table class="MsoNormalTable" width="500" style="width:490px"><tr><td>One</td><td>Two</td></tr></table>"#;
+    let blocks = html_layout(ordinary);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    assert_eq!(t.width, Some(Width::Px(490)));
+}
