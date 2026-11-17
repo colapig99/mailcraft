@@ -346,3 +346,67 @@ fn veeam_configuration_trailing_rowspan_keeps_four_data_columns() {
     assert_eq!(header.len(), 1);
     assert!((header[0] - 1000.0).abs() < 0.5);
 }
+
+/// Excel 9 PCM overtime report: cells spanning the yellow heading row
+/// continue to occupy the same columns below it. The HTML omits their td
+/// elements from the second source row.
+#[test]
+fn pcm_excel_rowspan_headers_keep_fifteen_column_grid() {
+    let html = r#"<table width="1099" cellspacing="0" style="border-collapse:collapse">
+      <tr><td rowspan="2">Area</td><td rowspan="2">WIP</td>
+      <td rowspan="2">People</td><td rowspan="2">Applied</td>
+      <td colspan="3">Time</td><td rowspan="2">Hours</td>
+      <td rowspan="2" colspan="4">Remarks</td>
+      <td colspan="2">Totals</td><td>X</td></tr>
+      <tr><td>Start</td><td>End</td><td>Hours</td>
+      <td colspan="2">Count</td><td>Y</td></tr>
+      <tr><td>Black room</td><td>3</td><td>3</td><td>3</td>
+      <td>15:30</td><td>22:30</td><td>6.5</td><td>19.5</td>
+      <td colspan="4">Notes</td><td colspan="2">Totals</td><td>Z</td></tr>
+    </table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let expanded = expand_rowspans(&table.rows);
+    let span_count = |row: &[Cell]| row.iter().map(|c| usize::from(c.span.max(1))).sum::<usize>();
+    assert_eq!(table.rows[1].iter().map(|c| usize::from(c.span)).sum::<usize>(), 6);
+    assert!(expanded.iter().all(|r| span_count(r) == 15), "{expanded:?}");
+    assert_eq!(expanded[1][0].blocks.len(), 0);
+    assert_eq!(expanded[1][0].rowspan, 1);
+    assert_eq!(expanded[1][4].blocks.len(), 1); // Start, at the 5th logical column
+    let cols = column_widths(&expanded);
+    let widths = shared_column_widths(&expanded, &cols, &[], 1099.0, 0.0);
+    // A complete grid is preserved even when column widths are not fully
+    // specified; normal content-based sizing remains available as fallback.
+    assert!(widths.is_none() || widths.as_ref().is_some_and(|w| w.len() == 15));
+}
+
+/// PCM statistics and headcount table: a two-column header spans two rows
+/// while the next source row has only thirteen columns.
+#[test]
+fn pcm_headcount_rowspan_two_column_header_stays_aligned() {
+    let html = r#"<table><tr><td colspan="2" rowspan="2">Resigned</td>
+      <td>2026-12</td><td>2026-11</td><td>2026-10</td></tr>
+      <tr><td>85</td><td>84</td><td>85</td></tr>
+      <tr><td colspan="2" rowspan="2">One</td><td>2025-12</td>
+      <td>2025-11</td><td>2025-10</td></tr>
+      <tr><td>75</td><td>74</td><td>73</td></tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let rows = expand_rowspans(&table.rows);
+    for r in &rows {
+        assert_eq!(r.iter().map(|c| usize::from(c.span.max(1))).sum::<usize>(), 5, "{r:?}");
+    }
+    assert_eq!(rows[1][0].span, 2);
+    assert!(rows[1][0].blocks.is_empty());
+    assert_eq!(rows[3][0].span, 2);
+}
+
+/// Existing ordinary and non-spanning Word tables must remain untouched.
+#[test]
+fn no_rowspan_tables_keep_original_cell_layout() {
+    let html = r#"<table width="400"><tr><td colspan="2">Title</td>
+      <td>Three</td></tr><tr><td>One</td><td>Two</td><td>Three</td></tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    assert_eq!(expand_rowspans(&t.rows), t.rows);
+}
