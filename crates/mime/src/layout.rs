@@ -139,6 +139,9 @@ pub struct Cell {
     pub align: Align,
     /// Columns it spans.
     pub span: u16,
+    /// Number of table rows covered; zero in older cached layouts means one.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rowspan: u16,
     /// A picture behind its content, covering the cell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_image: Option<String>,
