@@ -453,3 +453,26 @@ fn excel_css_cell_borders_survive_layout() {
     assert_eq!(table.rows[1][0].borders.top, None);
     assert_eq!(table.rows[1][1].borders, Borders::default());
 }
+
+/// Word 12 reports use blank cells to preserve an eight-column grid and
+/// a separate ranking block; dropping them shifts later columns.
+#[test]
+fn word_report_keeps_empty_spacer_cells() {
+    let html = r#"<table width="722" cellspacing="0"><tr>
+    <td width="81">PP</td><td width="134">4,13,19</td>
+    <td width="96">13</td><td width="124">42</td><td width="110">47</td>
+    <td width="32"></td><td width="72" bgcolor="#ffff99">4</td><td width="72">2</td>
+    </tr><tr><td>Nick</td><td>6,12,17</td>
+    <td>17</td><td></td><td></td><td></td><td>1</td><td>0</td></tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0].len(), 8);
+    assert_eq!(table.rows[1].len(), 8);
+    assert_eq!(table.rows[0][5].width, Some(Width::Px(32)));
+    assert!(table.rows[0][5].blocks.is_empty());
+    assert!(table.rows[1][3].blocks.is_empty());
+    assert!(table.rows[1][4].blocks.is_empty());
+    assert!(table.rows[1][5].blocks.is_empty());
+    assert_eq!(table.rows[0][6].background, Some([255, 255, 153]));
+}
