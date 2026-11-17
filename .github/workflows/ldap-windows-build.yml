@@ -75,6 +75,12 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui pcm_headcount_rowspan_two_column_header_stays_aligned
       - name: Test non-rowspan tables unchanged
         run: cargo test --locked -p mailcraft-ui-egui no_rowspan_tables_keep_original_cell_layout
+      - name: Test collapsed PCM border seams
+        run: cargo test --locked -p mailcraft-ui-egui pcm_collapsed_border_seams_use_one_stroke
+      - name: Test safe colspan border fallback
+        run: cargo test --locked -p mailcraft-ui-egui colspan_mismatch_does_not_remove_sender_borders
+      - name: Test explicit border collapse mode
+        run: cargo test --locked -p mailcraft-ui-egui collapse_mode_is_explicit_in_html_layout
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
