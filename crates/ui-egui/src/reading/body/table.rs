@@ -272,6 +272,13 @@ pub(crate) fn shared_column_widths(
             match (*w, content.get(i).and_then(|f| *f)) {
                 (Some(mime::layout::Width::Px(px)), Some(fit)) =>
                     Some(mime::layout::Width::Px(px.max(fit.min.ceil().max(1.0) as u32))),
+                // A Veeam 1%-wide status/name column can also be explicitly
+                // nowrap. Use the measured minimum before the remaining width
+                // is assigned to its trailing empty rowspan spacer.
+                (Some(mime::layout::Width::Percent(pc)), Some(fit)) if fit.min > 0.0 =>
+                    Some(mime::layout::Width::Px(
+                        ((width * f32::from(pc) / 100.0).max(fit.min)).ceil().max(1.0) as u32,
+                    )),
                 _ => *w,
             }
         } else { *w };
