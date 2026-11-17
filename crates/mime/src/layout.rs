@@ -128,6 +128,9 @@ pub struct Borders {
 pub struct Cell {
     pub blocks: Vec<Block>,
     pub width: Option<Width>,
+    /// An HTML nowrap cell or CSS white-space:nowrap should keep text on one line.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nowrap: bool,
     pub background: Option<[u8; 3]>,
     /// CSS borders, including separate Excel cell edges.
     #[serde(default)]
