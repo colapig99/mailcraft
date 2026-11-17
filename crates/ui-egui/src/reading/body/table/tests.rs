@@ -291,3 +291,58 @@ fn veeam_one_percent_nowrap_keeps_status_label_on_one_line() {
     let (plain_width, _) = cell_widths(&plain, &plain_cols, &content[..2], 900.0, 0.0);
     assert!((plain_width[0] - 9.0).abs() < 0.5, "ordinary 1% unexpectedly expanded: {plain_width:?}");
 }
+
+/// Veeam Configuration Backup: 5 logical columns, four 125px data columns,
+/// and a rightmost rowspan spacer with no explicit width. Row two omits that
+/// fifth td because the spacer is still occupied by rowspan=3.
+#[test]
+fn veeam_configuration_trailing_rowspan_keeps_four_data_columns() {
+    let html = r#"<table width="100%" style="border-collapse:collapse">
+      <tr><td colspan="5">Tuesday, 17 November 2026</td></tr>
+      <tr><td style="width:125px;white-space:nowrap">Start time</td>
+          <td style="width:125px;white-space:nowrap">10:00:10 AM</td>
+          <td style="width:125px;white-space:nowrap">Data size</td>
+          <td style="width:125px;white-space:nowrap">43.1 MB</td>
+          <td rowspan="3">&nbsp;</td></tr>
+      <tr><td style="width:125px;white-space:nowrap">End time</td>
+          <td style="width:125px">10:00:42 AM</td>
+          <td style="width:125px">Backup size</td>
+          <td style="width:125px">2.4 MB</td></tr>
+      <tr><td style="width:125px">Duration</td><td style="width:125px">0:00:31</td>
+          <td style="width:125px">Compression</td><td style="width:125px">18.09x</td></tr>
+      <tr><td colspan="5">Details</td></tr>
+      <tr><td style="width:125px;white-space:nowrap">Configuration catalog</td>
+          <td style="width:125px">644</td><td style="width:125px">576.3 KB</td>
+          <td style="width:125px">58.1 KB</td><td rowspan="5">&nbsp;</td></tr>
+      <tr><td style="width:125px">Backups catalog</td><td>610</td>
+          <td>2.1 MB</td><td>115.5 KB</td></tr>
+      </table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let columns = column_widths(&table.rows);
+    assert_eq!(columns.len(), 5);
+    assert!(columns[4].is_none());
+    let content = vec![
+        Some(Fit { min: 160.0, max: 160.0 }),
+        Some(Fit { min: 125.0, max: 125.0 }),
+        Some(Fit { min: 125.0, max: 125.0 }),
+        Some(Fit { min: 125.0, max: 125.0 }),
+        Some(Fit { min: 1.0, max: 1.0 }),
+    ];
+    let tracks = shared_column_widths(&table.rows, &columns, &content, 1000.0, 0.0)
+        .expect("trailing rowspan spacer should not disable shared grid");
+    assert_eq!(tracks.len(), 5);
+    assert!(tracks[0] >= 160.0, "nowrap label too narrow: {tracks:?}");
+    for col in &tracks[1..4] {
+        assert!((*col - 125.0).abs() < 0.5, "other data columns changed: {tracks:?}");
+    }
+    assert!(tracks[4] >= 400.0, "spacer must receive free width: {tracks:?}");
+    let narrow_row = widths_from_tracks(&table.rows[2], &tracks, 0.0)
+        .expect("rowspan occupies trailing fifth column");
+    assert_eq!(narrow_row.len(), 4);
+    assert!((narrow_row[3] - 125.0).abs() < 0.5);
+    let header = widths_from_tracks(&table.rows[0], &tracks, 0.0)
+        .expect("colspan should occupy all five tracks");
+    assert_eq!(header.len(), 1);
+    assert!((header[0] - 1000.0).abs() < 0.5);
+}
