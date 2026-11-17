@@ -67,6 +67,8 @@ jobs:
         run: cargo test --locked -p mailcraft-mime veeam_no_wrap_table_cells_are_preserved
       - name: Test Veeam percentage nowrap layout
         run: cargo test --locked -p mailcraft-ui-egui veeam_one_percent_nowrap_keeps_status_label_on_one_line
+      - name: Test Veeam Configuration Backup rowspan and nowrap column grid
+        run: cargo test --locked -p mailcraft-ui-egui veeam_configuration_trailing_rowspan_keeps_four_data_columns
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
