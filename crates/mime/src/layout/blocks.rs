@@ -111,6 +111,7 @@ pub(super) fn blocks(kids: &[Kid], ctx: &mut Ctx, depth: usize) -> Vec<Block> {
                     background: n.background(),
                     background_image: n.background_image(),
                     spacing: Some(n.cell_spacing()),
+                    collapse: n.style("border-collapse").is_some_and(|v| v == "collapse"),
                     padding: Some(n.cell_padding()),
                     // A table that sets no width is as wide as what it holds, as in a browser.
                     fit: n.width().is_none(),
