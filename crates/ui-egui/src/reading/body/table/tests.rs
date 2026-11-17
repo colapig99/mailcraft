@@ -247,3 +247,23 @@ fn word_report_colspan_and_ranking_share_one_grid() {
     assert!((first[6] - second[7]).abs() < 0.1);
     assert!((first.iter().sum::<f32>() - second.iter().sum::<f32>()).abs() < 0.1);
 }
+
+/// The extra width in a Word table must be shared across all eight fixed
+/// columns, not dumped into the last ranking column.
+#[test]
+fn word_pixel_grid_scales_all_columns_proportionally() {
+    let html = r#"<table width="722"><tr><td width="65">PP</td><td width="107">Numbers</td>
+    <td width="76">1</td><td width="99">2</td><td width="88">3</td>
+    <td width="26"></td><td width="58">Normal</td><td width="58">Bonus</td></tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let cols = column_widths(&table.rows);
+    let tracks = shared_column_widths(&table.rows, &cols, &[], 722.0, 0.0).expect("eight fixed columns");
+    let original = [65.0_f32, 107.0, 76.0, 99.0, 88.0, 26.0, 58.0, 58.0];
+    let total: f32 = original.iter().sum();
+    assert_eq!(tracks.len(), original.len());
+    for (actual, px) in tracks.iter().zip(original) {
+        assert!((actual - px * 722.0 / total).abs() < 0.5, "{tracks:?}");
+    }
+    assert!((tracks.iter().sum::<f32>() - 722.0).abs() < 0.5);
+}
