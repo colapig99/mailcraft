@@ -157,21 +157,17 @@ pub(crate) fn shared_column_widths(
         width: *w, span: 1, ..Default::default()
     }).collect();
     let (mut tracks, _) = cell_widths(&cells, columns, content, width, spacing);
-    // For a fully fixed pixel grid, preserve proportions when its container
-    // is wider than the individual style widths (Word 12's pt vs px exports).
-    // cell_widths normally assigns all leftover room to the last column.
+    // Word may specify a 722px table but point-based cells totaling ~578px.
+    // Expand those cells proportionally, rather than growing only the last one.
+    // Other fixed-width tables keep the established layout behavior.
     if columns.iter().take(count).all(|w| matches!(w, Some(mime::layout::Width::Px(_)))) {
+        let raw: Vec<f32> = columns.iter().take(count).filter_map(|w| {
+            if let Some(mime::layout::Width::Px(px)) = w { Some(*px as f32) } else { None }
+        }).collect();
+        let raw_total = raw.iter().sum::<f32>();
         let available = (width - spacing * count.saturating_sub(1) as f32).max(1.0);
-        {
-            // Use the sender's original relative column widths, not the
-            // already stretched final track from cell_widths.
-            let raw: Vec<f32> = columns.iter().take(count).filter_map(|w| {
-                if let Some(mime::layout::Width::Px(px)) = w { Some(*px as f32) } else { None }
-            }).collect();
-            let raw_total = raw.iter().sum::<f32>();
-            if raw_total > 0.0 && raw.len() == count {
-                tracks = raw.iter().map(|px| px / raw_total * available).collect();
-            }
+        if raw.len() == count && raw_total > 0.0 && available > raw_total * 1.15 {
+            tracks = raw.iter().map(|px| px / raw_total * available).collect();
         }
     }
     (tracks.len() == count).then_some(tracks)
