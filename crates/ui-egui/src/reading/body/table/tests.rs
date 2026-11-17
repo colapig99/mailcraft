@@ -220,3 +220,30 @@ fn corners_are_no_rounder_than_half_the_shorter_side() {
     assert_eq!(corner(None, rect(40.0, 100.0)), egui::CornerRadius::ZERO);
     assert_eq!(corner(Some(9), rect(0.0, 0.0)), egui::CornerRadius::ZERO);
 }
+
+/// Word 12 lottery report: a title spanning the first two columns and a
+/// one-column spacer must not shift ranking columns across subsequent rows.
+#[test]
+fn word_report_colspan_and_ranking_share_one_grid() {
+    let html = r#"<table width="722" cellspacing="0"><tr>
+      <td colspan="2" width="216">Title</td><td width="96"></td><td width="124"></td>
+      <td width="110"></td><td width="32"></td><td width="72"></td><td width="72"></td>
+    </tr><tr>
+      <td width="81">Name</td><td width="134">Numbers</td><td width="96">1</td>
+      <td width="124">2</td><td width="110">3</td><td width="32"></td>
+      <td width="72">Correct</td><td width="72">Bonus</td>
+    </tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let columns = column_widths(&table.rows);
+    let tracks = shared_column_widths(&table.rows, &columns, &[], 722.0, 0.0).expect("fully specified columns");
+    assert_eq!(tracks.len(), 8);
+    let first = widths_from_tracks(&table.rows[0], &tracks, 0.0).expect("title row");
+    let second = widths_from_tracks(&table.rows[1], &tracks, 0.0).expect("data row");
+    assert_eq!(first.len(), 7);
+    assert_eq!(second.len(), 8);
+    assert!((first[0] - second[0] - second[1]).abs() < 0.1);
+    assert!((first[5] - second[6]).abs() < 0.1);
+    assert!((first[6] - second[7]).abs() < 0.1);
+    assert!((first.iter().sum::<f32>() - second.iter().sum::<f32>()).abs() < 0.1);
+}
