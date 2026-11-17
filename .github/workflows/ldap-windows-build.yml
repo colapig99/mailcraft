@@ -9,6 +9,7 @@ on:
       - 'crates/mime/src/layout/node.rs'
       - 'crates/mime/src/layout/blocks.rs'
       - 'crates/ui-egui/src/reading/body/table.rs'
+      - 'crates/ui-egui/src/reading/body/table/measure.rs'
       - 'crates/ui-egui/src/reading/body.rs'
       - 'crates/ui-egui/src/reading/body/table/tests.rs'
       - 'crates/mime/src/layout/tests.rs'
@@ -62,6 +63,10 @@ jobs:
         run: cargo test --locked -p mailcraft-mime word_12_conflicting_table_width_keeps_original_pixel_grid
       - name: Test proportional fixed columns
         run: cargo test --locked -p mailcraft-ui-egui word_pixel_grid_scales_all_columns_proportionally
+      - name: Test Veeam HTML nowrap parsing
+        run: cargo test --locked -p mailcraft-mime veeam_no_wrap_table_cells_are_preserved
+      - name: Test Veeam percentage nowrap layout
+        run: cargo test --locked -p mailcraft-ui-egui veeam_one_percent_nowrap_keeps_status_label_on_one_line
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
