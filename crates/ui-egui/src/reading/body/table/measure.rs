@@ -143,7 +143,11 @@ impl Measure<'_> {
                 let w = fit.min.max(px as f32);
                 Some(Fit { min: w, max: w })
             }
+            // Even a 1%-wide cell must have enough room for its text when
+            // the sender explicitly asks it not to wrap (Veeam status columns).
+            Some(Width::Percent(_)) if c.nowrap => Some(Fit { min: fit.max, max: fit.max }),
             Some(Width::Percent(_)) => None,
+            None if c.nowrap => Some(Fit { min: fit.max, max: fit.max }),
             None => Some(fit),
         }
     }
