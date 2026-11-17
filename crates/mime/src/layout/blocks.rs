@@ -79,6 +79,7 @@ pub(super) fn blocks(kids: &[Kid], ctx: &mut Ctx, depth: usize) -> Vec<Block> {
                                         if ctx.cells > MAX_CELLS { Vec::new() } else { colored(ctx, c, |ctx| blocks(&c.kids, ctx, depth + 1)) };
                                     Cell {
                                         width: c.width().or_else(|| picture_width(&content)),
+                                        nowrap: c.attr("nowrap").is_some() || c.style("white-space").is_some_and(|v| v == "nowrap"),
                                         blocks: content,
                                         background: c.background().or(row_bg),
                                         borders: c.borders(),
