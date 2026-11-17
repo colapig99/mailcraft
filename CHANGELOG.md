@@ -29,6 +29,7 @@ on GitHub.
 - Keep empty HTML table cells, which Outlook-generated reports use to separate the main data grid from ranking columns.
 - Word 12 reports with conflicting point and pixel widths retain their original table width; fixed grid columns are expanded proportionally and wide tables can scroll instead of squeezing text.
 - HTML reports such as Veeam notifications honor `nowrap` on narrow percentage-width cells, preventing status labels and transferred-size headings from wrapping vertically.
+- Veeam QPLCHN nine-column tables now reserve the measured width of 1%-wide nowrap status/VM-name columns before giving unused width to the trailing rowspan spacer; ordinary percentage tables remain unchanged.
 - Veeam Configuration Backup tables retain a shared five-column grid when an empty final cell uses rowspan; non-wrapping data labels keep their measured width while the trailing spacer absorbs the remaining table width.
 - Outlook/Excel HTML tables now retain and render rowspan occupancy across following rows, preserving complex merged headers and PCM overtime headcount columns without modifying stored MIME messages.
 - Explicit `border-collapse: collapse` email tables now resolve duplicate shared cell strokes (favoring wider borders), while borderless and separated tables retain their original edge behavior.
