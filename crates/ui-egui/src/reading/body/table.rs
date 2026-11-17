@@ -150,11 +150,29 @@ pub(crate) fn shared_column_widths(
     spacing: f32,
 ) -> Option<Vec<f32>> {
     let count = rows.iter().map(|row| row.iter().map(|c| usize::from(c.span.max(1))).sum::<usize>()).max()?;
-    if count < 2 || count > 64 || columns.len() < count || columns.get(..count)?.iter().any(Option::is_none) {
+    if count < 2 || count > 64 || columns.len() < count {
         return None;
     }
-    let cells: Vec<mime::layout::Cell> = columns.iter().take(count).map(|w| mime::layout::Cell {
-        width: *w, span: 1, ..Default::default()
+    // Veeam's fifth column contains a rowspan spacer with no width. The first
+    // four columns specify pixel widths on every data row. Keep one shared
+    // track for the trailing auto-width spacer instead of stretching column 4
+    // whenever that spanning cell is absent from a subsequent HTML row.
+    let trailing_auto = columns.get(..count)?.iter().take(count - 1).all(Option::is_some)
+        && columns[count - 1].is_none();
+    if !trailing_auto && columns.get(..count)?.iter().any(Option::is_none) {
+        return None;
+    }
+    let cells: Vec<mime::layout::Cell> = columns.iter().take(count).enumerate().map(|(i, w)| {
+        // Respect the measured width of a nowrap label such as
+        // "Configuration catalog" rather than squeezing it to 125 px.
+        let width = if trailing_auto {
+            match (*w, content.get(i).and_then(|f| *f)) {
+                (Some(mime::layout::Width::Px(px)), Some(fit)) =>
+                    Some(mime::layout::Width::Px(px.max(fit.min.ceil().max(1.0) as u32))),
+                _ => *w,
+            }
+        } else { *w };
+        mime::layout::Cell { width, span: 1, ..Default::default() }
     }).collect();
     let (mut tracks, _) = cell_widths(&cells, columns, content, width, spacing);
     // Word may specify a 722px table but point-based cells totaling ~578px.
@@ -185,7 +203,9 @@ pub(crate) fn widths_from_tracks(row: &[mime::layout::Cell], tracks: &[f32], spa
         widths.push(slice.iter().sum::<f32>() + spacing * span.saturating_sub(1) as f32);
         at = end;
     }
-    (at == tracks.len()).then_some(widths)
+    // A trailing rowspan cell appears only in the first source row; later
+    // source rows legitimately end before the occupied trailing column.
+    (at <= tracks.len() && at > 0).then_some(widths)
 }
 
 /// Each cell's width in a row `width` wide, `spacing` between the cells, `columns` the widths the
@@ -282,7 +302,7 @@ pub(crate) fn cell_widths(
                 *w += *w * grow;
             }
         }
-    } else if used < width
+    } else if used < width && col >= columns.len()
         && let Some(last) = widths.last_mut()
     {
         *last += width - used;
