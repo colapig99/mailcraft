@@ -161,9 +161,8 @@ pub(crate) fn shared_column_widths(
     // is wider than the individual style widths (Word 12's pt vs px exports).
     // cell_widths normally assigns all leftover room to the last column.
     if columns.iter().take(count).all(|w| matches!(w, Some(mime::layout::Width::Px(_)))) {
-        let total = tracks.iter().sum::<f32>();
         let available = (width - spacing * count.saturating_sub(1) as f32).max(1.0);
-        if total > 0.0 && (total - available).abs() > 0.5 {
+        {
             // Use the sender's original relative column widths, not the
             // already stretched final track from cell_widths.
             let raw: Vec<f32> = columns.iter().take(count).filter_map(|w| {
