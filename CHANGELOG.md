@@ -29,6 +29,7 @@ on GitHub.
 - Keep empty HTML table cells, which Outlook-generated reports use to separate the main data grid from ranking columns.
 - Word 12 reports with conflicting point and pixel widths retain their original table width; fixed grid columns are expanded proportionally and wide tables can scroll instead of squeezing text.
 - HTML reports such as Veeam notifications honor `nowrap` on narrow percentage-width cells, preventing status labels and transferred-size headings from wrapping vertically.
+- Veeam Configuration Backup tables retain a shared five-column grid when an empty final cell uses rowspan; non-wrapping data labels keep their measured width while the trailing spacer absorbs the remaining table width.
 - On Windows, maximizing and restoring MailCraft are smooth: they animate as any window's do, the taskbar no longer blinks and the window no longer flashes a blurred picture of itself.
 - On Windows, all text in MailCraft is sharp again: the window's own title bar had the picture squeezed by one row of pixels, which softened every line from top to bottom. A stray black line along the top of the window is gone too.
 - Removing an account while its `.pst` import was still writing could leave a new account added with the same id writing into the removed account's kept data file. The two now never share a file.
