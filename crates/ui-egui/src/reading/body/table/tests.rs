@@ -267,3 +267,27 @@ fn word_pixel_grid_scales_all_columns_proportionally() {
     }
     assert!((tracks.iter().sum::<f32>() - 722.0).abs() < 0.5);
 }
+
+/// Veeam status labels use 1% for a column that must not wrap. Its content
+/// minimum is enforced without changing ordinary percentage-based layouts.
+#[test]
+fn veeam_one_percent_nowrap_keeps_status_label_on_one_line() {
+    let html = r#"<table width="100%" cellspacing="0">
+      <tr><td nowrap="" style="width:1%">Success</td>
+      <td width="85">1</td><td width="85">Start time</td>
+      <td width="85">8:00:16 AM</td><td>Details</td></tr></table>"#;
+    let row = first_row(html);
+    assert!(row[0].nowrap);
+    let columns = column_widths(std::slice::from_ref(&row));
+    // A premeasured 64px label simulates the font-specific measured maximum.
+    let content = vec![Some(Fit { min: 64.0, max: 64.0 }), Some(Fit { min: 15.0, max: 15.0 }),
+        Some(Fit { min: 75.0, max: 75.0 }), Some(Fit { min: 75.0, max: 75.0 }),
+        Some(Fit { min: 45.0, max: 45.0 })];
+    let (widths, stacked) = cell_widths(&row, &columns, &content, 900.0, 0.0);
+    assert!(!stacked);
+    assert!(widths[0] >= 64.0, "nowrap text squeezed: {widths:?}");
+    let plain = first_row(r#"<table><tr><td style="width:1%">Success</td><td>Other</td></tr></table>"#);
+    let plain_cols = column_widths(std::slice::from_ref(&plain));
+    let (plain_width, _) = cell_widths(&plain, &plain_cols, &content[..2], 900.0, 0.0);
+    assert!((plain_width[0] - 9.0).abs() < 0.5, "ordinary 1% unexpectedly expanded: {plain_width:?}");
+}
