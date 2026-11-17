@@ -31,6 +31,7 @@ on GitHub.
 - HTML reports such as Veeam notifications honor `nowrap` on narrow percentage-width cells, preventing status labels and transferred-size headings from wrapping vertically.
 - Veeam Configuration Backup tables retain a shared five-column grid when an empty final cell uses rowspan; non-wrapping data labels keep their measured width while the trailing spacer absorbs the remaining table width.
 - Outlook/Excel HTML tables now retain and render rowspan occupancy across following rows, preserving complex merged headers and PCM overtime headcount columns without modifying stored MIME messages.
+- Explicit `border-collapse: collapse` email tables now resolve duplicate shared cell strokes (favoring wider borders), while borderless and separated tables retain their original edge behavior.
 - On Windows, maximizing and restoring MailCraft are smooth: they animate as any window's do, the taskbar no longer blinks and the window no longer flashes a blurred picture of itself.
 - On Windows, all text in MailCraft is sharp again: the window's own title bar had the picture squeezed by one row of pixels, which softened every line from top to bottom. A stray black line along the top of the window is gone too.
 - Removing an account while its `.pst` import was still writing could leave a new account added with the same id writing into the removed account's kept data file. The two now never share a file.
