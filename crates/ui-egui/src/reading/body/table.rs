@@ -22,12 +22,14 @@ impl Body<'_> {
         row: &[mime::layout::Cell],
         columns: &[Option<mime::layout::Width>],
         content: &[Option<Fit>],
+        tracks: Option<&[f32]>,
         width: f32,
         page: [u8; 3],
         room: Room,
         depth: usize,
     ) {
-        let (widths, stack) = cell_widths(row, columns, content, width, room.spacing);
+        let (widths, stack) = tracks.and_then(|t| widths_from_tracks(row, t, room.spacing))
+            .map_or_else(|| cell_widths(row, columns, content, width, room.spacing), |w| (w, false));
         let heights_id = ui.next_auto_id().with("cell-heights");
         let known: Vec<f32> = ui.ctx().data(|d| d.get_temp(heights_id)).unwrap_or_default();
         // Each cell's padding: its own, else its table's.
@@ -136,6 +138,41 @@ pub(crate) fn corner(radius: Option<u16>, rect: egui::Rect) -> egui::CornerRadiu
     let most = (rect.width().min(rect.height()) / 2.0).max(0.0);
     let r = radius.map_or(0.0, f32::from).min(most).min(f32::from(u8::MAX));
     egui::CornerRadius::same(r.round() as u8)
+}
+
+/// Resolve a fully specified Word/Excel column grid once for the whole table.
+/// For partially defined grids use the existing content-driven layout.
+pub(crate) fn shared_column_widths(
+    rows: &[Vec<mime::layout::Cell>],
+    columns: &[Option<mime::layout::Width>],
+    content: &[Option<Fit>],
+    width: f32,
+    spacing: f32,
+) -> Option<Vec<f32>> {
+    let count = rows.iter().map(|row| row.iter().map(|c| usize::from(c.span.max(1))).sum::<usize>()).max()?;
+    if count < 2 || count > 64 || columns.len() < count || columns.get(..count)?.iter().any(Option::is_none) {
+        return None;
+    }
+    let cells: Vec<mime::layout::Cell> = columns.iter().take(count).map(|w| mime::layout::Cell {
+        width: *w, span: 1, ..Default::default()
+    }).collect();
+    let (tracks, _) = cell_widths(&cells, columns, content, width, spacing);
+    (tracks.len() == count).then_some(tracks)
+}
+
+/// Give colspan cells the sum of the same column tracks every other row uses.
+/// Internal gaps are inside a spanning cell, not between its siblings.
+pub(crate) fn widths_from_tracks(row: &[mime::layout::Cell], tracks: &[f32], spacing: f32) -> Option<Vec<f32>> {
+    let mut at = 0usize;
+    let mut widths = Vec::with_capacity(row.len());
+    for cell in row {
+        let span = usize::from(cell.span.max(1));
+        let end = at.checked_add(span)?;
+        let slice = tracks.get(at..end)?;
+        widths.push(slice.iter().sum::<f32>() + spacing * span.saturating_sub(1) as f32);
+        at = end;
+    }
+    (at == tracks.len()).then_some(widths)
 }
 
 /// Each cell's width in a row `width` wide, `spacing` between the cells, `columns` the widths the
