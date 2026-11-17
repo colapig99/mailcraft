@@ -363,6 +363,15 @@ impl Body<'_> {
                     }
                 }
                 Block::Table(table) if depth < 16 => {
+                    // A source rowspan occupies its columns in subsequent rows even
+                    // though the sender omits those <td> tags. Expand only the
+                    // ephemeral paint layout; never change the stored HTML.
+                    let expanded = table.rows.iter().flatten().any(|c| c.rowspan > 1).then(|| {
+                        let mut t = table.clone();
+                        t.rows = table::expand_rowspans(&table.rows);
+                        t
+                    });
+                    let table = expanded.as_ref().unwrap_or(table);
                     // What its columns hold (measured once): their widths, and its own when it
                     // sets none and is as wide as what it holds (a `<table>`, a button).
                     let measures = table::measured(ui, self.key, table);
