@@ -458,12 +458,12 @@ fn excel_css_cell_borders_survive_layout() {
 /// a separate ranking block; dropping them shifts later columns.
 #[test]
 fn word_report_keeps_empty_spacer_cells() {
-    let html = r#"<table width="722" cellspacing="0"><tr>
+    let html = r##"<table width="722" cellspacing="0"><tr>
     <td width="81">PP</td><td width="134">4,13,19</td>
     <td width="96">13</td><td width="124">42</td><td width="110">47</td>
     <td width="32"></td><td width="72" bgcolor="#ffff99">4</td><td width="72">2</td>
     </tr><tr><td>Nick</td><td>6,12,17</td>
-    <td>17</td><td></td><td></td><td></td><td>1</td><td>0</td></tr></table>"#;
+    <td>17</td><td></td><td></td><td></td><td>1</td><td>0</td></tr></table>"##;
     let blocks = html_layout(html);
     let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
     assert_eq!(table.rows.len(), 2);
