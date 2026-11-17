@@ -140,7 +140,10 @@ impl Measure<'_> {
         let fit = Fit { min: inner.min + pad[1] + pad[3], max: inner.max + pad[1] + pad[3] };
         match c.width {
             Some(Width::Px(px)) => {
-                let w = fit.min.max(px as f32);
+                // For explicitly non-wrapping cells, the minimum is the full
+                // unwrapped line, not its longest individual word.
+                let need = if c.nowrap { fit.max } else { fit.min };
+                let w = need.max(px as f32);
                 Some(Fit { min: w, max: w })
             }
             // Even a 1%-wide cell must have enough room for its text when
