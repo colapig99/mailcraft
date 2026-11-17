@@ -49,7 +49,8 @@ fn write(blocks: &[Block], text: &mut dyn FnMut(usize) -> String, n: &mut usize,
             Block::Table(t) => {
                 let centred = if t.align == Align::Center { ";margin:0 auto" } else { "" };
                 out.push_str(&format!(
-                    "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\"{}{}{}{} style=\"border-collapse:collapse{centred}\">",
+                    "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\"{}{}{}{} style=\"border-collapse:{}{centred}\">",
+                    if t.collapse { "collapse" } else { "separate" },
                     width(t.width),
                     align(t.align),
                     t.background.map(|c| format!(" bgcolor=\"{}\"", hex(c))).unwrap_or_default(),
