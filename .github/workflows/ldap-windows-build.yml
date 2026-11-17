@@ -69,6 +69,12 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui veeam_one_percent_nowrap_keeps_status_label_on_one_line
       - name: Test Veeam Configuration Backup rowspan and nowrap column grid
         run: cargo test --locked -p mailcraft-ui-egui veeam_configuration_trailing_rowspan_keeps_four_data_columns
+      - name: Test PCM Excel rowspan header grid
+        run: cargo test --locked -p mailcraft-ui-egui pcm_excel_rowspan_headers_keep_fifteen_column_grid
+      - name: Test PCM two-column headcount spanning rows
+        run: cargo test --locked -p mailcraft-ui-egui pcm_headcount_rowspan_two_column_header_stays_aligned
+      - name: Test non-rowspan tables unchanged
+        run: cargo test --locked -p mailcraft-ui-egui no_rowspan_tables_keep_original_cell_layout
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
