@@ -92,7 +92,8 @@ pub(super) fn blocks(kids: &[Kid], ctx: &mut Ctx, depth: usize) -> Vec<Block> {
                                         radius: c.radius(),
                                     }
                                 })
-                                .filter(|c| !c.blocks.is_empty() || c.background.is_some() || c.background_image.is_some())
+                                // Empty <td> elements still occupy columns. Word uses a
+                                // blank separator between the table and ranking cells.
                                 .collect::<Vec<Cell>>()
                         })
                         .filter(|r| !r.is_empty())
