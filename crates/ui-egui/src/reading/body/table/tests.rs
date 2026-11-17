@@ -474,3 +474,52 @@ fn collapse_mode_is_explicit_in_html_layout() {
     assert!(!separate.collapse);
     assert!(collapsed.collapse);
 }
+
+/// Real QPLCHN Veeam report has a 1%-wide, nowrap "Success" column,
+/// seven 85px columns, and an unmeasured trailing rowspan spacer. The grid
+/// must give the label/name column its measured minimum, not just 1% of width.
+#[test]
+fn veeam_qplchn_percent_nowrap_shared_grid_uses_content_minimum() {
+    let html = r#"<table width="100%" style="border-collapse:collapse">
+      <tr><td colspan="9">Report</td></tr>
+      <tr><td nowrap="" style="width:1%">Success</td>
+      <td width="85">7</td><td width="85">Start time</td>
+      <td width="85">1:00 AM</td><td width="85">Total size</td>
+      <td width="85">4.6 TB</td><td width="85">Backup size</td>
+      <td width="85">91.3 GB</td><td rowspan="3">&nbsp;</td></tr>
+      <tr><td nowrap="">Warning</td><td>0</td><td>End time</td>
+      <td>1:21 AM</td><td>Data read</td><td>136.9 GB</td>
+      <td>Dedupe</td><td>1.0x</td></tr>
+      <tr><td nowrap="">Error</td><td>0</td><td>Duration</td>
+      <td>0:21</td><td>Transferred</td><td>88 GB</td>
+      <td>Compression</td><td>1.4x</td></tr>
+    </table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    let expanded = expand_rowspans(&t.rows);
+    let cols = column_widths(&expanded);
+    assert_eq!(cols.len(), 9);
+    assert_eq!(cols[0], Some(mime::layout::Width::Percent(1)));
+    assert_eq!(cols[8], None);
+    let mut measured = vec![Some(Fit { min: 85.0, max: 85.0 }); 9];
+    measured[0] = Some(Fit { min: 245.0, max: 245.0 }); // QPLCHN04 (email server GW)
+    measured[8] = Some(Fit { min: 1.0, max: 1.0 });
+    let tracks = shared_column_widths(&expanded, &cols, &measured, 1500.0, 0.0).expect("trailing spacer");
+    assert!(tracks[0] >= 245.0, "status and VM names may not wrap into vertical letters: {tracks:?}");
+    assert!((tracks[1] - 85.0).abs() < 0.1, "{tracks:?}");
+    assert!(tracks[8] > 500.0, "unused table width belongs to trailing spacer: {tracks:?}");
+    let row = widths_from_tracks(&expanded[2], &tracks, 0.0).expect("rowspan continuation");
+    assert_eq!(row.len(), 9);
+}
+
+/// Narrow percentage columns without a trailing spacer retain their normal
+/// percentage behavior; the fix must not stretch arbitrary layout tables.
+#[test]
+fn ordinary_percent_table_does_not_force_content_minima() {
+    let html = r#"<table width="100%"><tr><td width="1%">Status</td><td width="99%">Details</td></tr></table>"#;
+    let row = first_row(html);
+    let cols = column_widths(std::slice::from_ref(&row));
+    let fit = vec![Some(Fit { min: 180.0, max: 180.0 }), Some(Fit { min: 100.0, max: 100.0 })];
+    let tracks = shared_column_widths(&[row], &cols, &fit, 1000.0, 0.0).expect("fixed percentages");
+    assert!(tracks[0] < 30.0, "ordinary percent column unexpectedly expanded: {tracks:?}");
+}
