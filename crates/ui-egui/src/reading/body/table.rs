@@ -223,7 +223,11 @@ pub(crate) fn cell_widths(
                 let parts = columns.get(col..col + span)?;
                 (parts.len() == span && parts.iter().all(Option::is_some)).then(|| parts.iter().flatten().map(|w| px(*w)).sum::<f32>())
             };
-            let w = c.width.map(px).or_else(from_columns);
+            let w = c.width.map(px).or_else(from_columns).map(|asked| {
+                // A 1% width in automated reports is a preference, not
+                // permission to split "Success" vertically when nowrap is set.
+                if c.nowrap { asked.max(content.get(col).and_then(|f| *f).map_or(0.0, |f| f.max)) } else { asked }
+            });
             let gaps = spacing * span.saturating_sub(1) as f32;
             let fit = content.get(col..col.saturating_add(span)).filter(|parts| parts.len() == span).and_then(|parts| {
                 parts.iter().try_fold(Fit { min: gaps, max: gaps }, |a, p| p.map(|p| Fit { min: a.min + p.min, max: a.max + p.max }))
