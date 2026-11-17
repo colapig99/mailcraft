@@ -367,7 +367,7 @@ impl Body<'_> {
                     // sets none and is as wide as what it holds (a `<table>`, a button).
                     let measures = table::measured(ui, self.key, table);
                     let tw = match table.width {
-                        Some(Width::Px(px)) => (px as f32).min(width),
+                        Some(Width::Px(px)) => px as f32,
                         Some(Width::Percent(pc)) => width * f32::from(pc) / 100.0,
                         None if table.fit => measures.whole.map_or(width, |f| f.max.min(width)),
                         None => width,
@@ -384,7 +384,11 @@ impl Body<'_> {
                     let tbg = theme::box_color(table.background, page, &st.tokens);
                     let page = tbg.unwrap_or(page);
                     let behind = table.background_image.as_deref().and_then(|src| self.background(st, ui.ctx(), src));
-                    ui.horizontal_top(|ui| {
+                    // Do not compress a fixed-width Outlook table to the reading
+                    // pane: that makes dates and short labels wrap. Give it horizontal
+                    // scrolling when its requested width exceeds the visible pane.
+                    let mut draw_table = |ui: &mut Ui| {
+                        ui.horizontal_top(|ui| {
                         ui.add_space(indent);
                         ui.allocate_ui_with_layout(vec2(tw, 0.0), egui::Layout::top_down(Align::Min), |ui| {
                             ui.set_width(tw);
@@ -409,7 +413,13 @@ impl Body<'_> {
                             });
                             ui.painter().set(framed.inner, table::backdrop(framed.response.rect, table.radius, fill, behind.as_ref()));
                         });
-                    });
+                        });
+                    };
+                    if tw > width + 0.5 {
+                        egui::ScrollArea::horizontal().auto_shrink([false, true]).show(ui, |ui| draw_table(ui));
+                    } else {
+                        draw_table(ui);
+                    }
                 }
                 Block::Table(_) => {}
             }
