@@ -399,8 +399,11 @@ impl Body<'_> {
                                 ui.spacing_mut().item_spacing = vec2(spacing, spacing);
                                 let columns = column_widths(&table.rows);
                                 let inner = (tw - 2.0 * spacing).max(1.0);
+                                // Word/Excel tables specify one set of column widths across
+                                // all rows. Resolve these tracks once, not once per row.
+                                let tracks = table::shared_column_widths(&table.rows, &columns, &measures.columns, inner, spacing);
                                 for row in &table.rows {
-                                    self.row(st, ui, row, &columns, &measures.columns, inner, page, room, depth);
+                                    self.row(st, ui, row, &columns, &measures.columns, tracks.as_deref(), inner, page, room, depth);
                                 }
                                 slot
                             });
