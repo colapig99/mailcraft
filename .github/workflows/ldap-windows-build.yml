@@ -9,6 +9,8 @@ on:
       - 'crates/mime/src/layout/node.rs'
       - 'crates/mime/src/layout/blocks.rs'
       - 'crates/ui-egui/src/reading/body/table.rs'
+      - 'crates/ui-egui/src/reading/body.rs'
+      - 'crates/ui-egui/src/reading/body/table/tests.rs'
       - 'crates/mime/src/layout/tests.rs'
       - 'crates/engine/src/session/pim/directory.rs'
       - 'crates/ui-egui/src/panes/list.rs'
@@ -52,6 +54,8 @@ jobs:
           toolchain: '1.98.0'
       - name: Test HTML Excel table border regression
         run: cargo test --locked -p mailcraft-mime excel_css_cell_borders_survive_layout
+      - name: Test shared Word table column tracks
+        run: cargo test --locked -p mailcraft-ui-egui word_report_colspan_and_ranking_share_one_grid
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
