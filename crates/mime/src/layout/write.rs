@@ -59,8 +59,9 @@ fn write(blocks: &[Block], text: &mut dyn FnMut(usize) -> String, n: &mut usize,
                     out.push_str("<tr>");
                     for c in row {
                         let span = if c.span > 1 { format!(" colspan=\"{}\"", c.span) } else { String::new() };
+                        let rowspan = if c.rowspan > 1 { format!(" rowspan=\"{}\"", c.rowspan) } else { String::new() };
                         out.push_str(&format!(
-                            "<td valign=\"top\"{}{span}{}{}{} style=\"padding:6px{}\">",
+                            "<td valign=\"top\"{}{span}{rowspan}{}{}{} style=\"padding:6px{}\">",
                             width(c.width),
                             c.background.map(|c| format!(" bgcolor=\"{}\"", hex(c))).unwrap_or_default(),
                             align(c.align),
