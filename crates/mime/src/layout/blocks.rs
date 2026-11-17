@@ -201,6 +201,7 @@ pub(super) fn blocks(kids: &[Kid], ctx: &mut Ctx, depth: usize) -> Vec<Block> {
                                     Cell {
                                         blocks: if ctx.cells > MAX_CELLS { Vec::new() } else { content },
                                         width: c.width(),
+                                        nowrap: c.attr("nowrap").is_some() || c.style("white-space").is_some_and(|v| v == "nowrap"),
                                         background: c.background(),
                                         borders: c.borders(),
                                         align: c.align(),
