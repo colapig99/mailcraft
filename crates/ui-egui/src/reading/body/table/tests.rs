@@ -410,3 +410,65 @@ fn no_rowspan_tables_keep_original_cell_layout() {
     let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
     assert_eq!(expand_rowspans(&t.rows), t.rows);
 }
+
+/// Collapsed tables use one line per shared seam; the thicker sender edge wins.
+/// Blank tables must not grow an invented grid of black borders.
+#[test]
+fn pcm_collapsed_border_seams_use_one_stroke() {
+    use mime::layout::{Border, Borders};
+    let black = Border { width: 1, color: [0, 0, 0] };
+    let blue = Border { width: 2, color: [0, 0, 255] };
+    let mut rows = vec![
+        vec![
+            Cell { span: 1, borders: Borders { right: Some(black), bottom: Some(black), ..Default::default() }, ..Default::default() },
+            Cell { span: 1, borders: Borders { left: Some(blue), bottom: Some(black), ..Default::default() }, ..Default::default() },
+        ],
+        vec![
+            Cell { span: 1, borders: Borders { top: Some(blue), right: Some(black), ..Default::default() }, ..Default::default() },
+            Cell { span: 1, borders: Borders { top: Some(black), left: Some(black), ..Default::default() }, ..Default::default() },
+        ],
+    ];
+    collapse_shared_borders(&mut rows);
+    assert_eq!(rows[0][0].borders.right, Some(blue));
+    assert_eq!(rows[0][1].borders.left, None);
+    assert_eq!(rows[1][0].borders.right, Some(black));
+    assert_eq!(rows[1][1].borders.left, None);
+    assert_eq!(rows[0][0].borders.bottom, Some(blue));
+    assert_eq!(rows[1][0].borders.top, None);
+    assert_eq!(rows[0][1].borders.bottom, Some(black));
+    assert_eq!(rows[1][1].borders.top, None);
+    let mut blank = vec![vec![Cell { span: 1, ..Default::default() }, Cell { span: 1, ..Default::default() }]];
+    collapse_shared_borders(&mut blank);
+    assert!(blank[0].iter().all(|c| c.borders == Borders::default()));
+}
+
+/// Do not remove an edge across an unmatched colspan boundary: segments can
+/// span only part of a neighbor and need separate border conflict handling.
+#[test]
+fn colspan_mismatch_does_not_remove_sender_borders() {
+    use mime::layout::{Border, Borders};
+    let line = Some(Border { width: 1, color: [0, 0, 0] });
+    let mut rows = vec![
+        vec![Cell { span: 2, borders: Borders { bottom: line, ..Default::default() }, ..Default::default() }],
+        vec![
+            Cell { span: 1, borders: Borders { top: line, ..Default::default() }, ..Default::default() },
+            Cell { span: 1, borders: Borders { top: line, ..Default::default() }, ..Default::default() },
+        ],
+    ];
+    collapse_shared_borders(&mut rows);
+    assert_eq!(rows[0][0].borders.bottom, line);
+    assert_eq!(rows[1][0].borders.top, line);
+    assert_eq!(rows[1][1].borders.top, line);
+}
+
+/// Respect sender-selected border separation rather than collapsing all
+/// tables merely because their HTML cellspacing was zero.
+#[test]
+fn collapse_mode_is_explicit_in_html_layout() {
+    let a = html_layout(r#"<table cellspacing="0"><tr><td>A</td></tr></table>"#);
+    let b = html_layout(r#"<table style="border-collapse:collapse"><tr><td>A</td></tr></table>"#);
+    let Some(Block::Table(separate)) = a.first() else { panic!("missing table") };
+    let Some(Block::Table(collapsed)) = b.first() else { panic!("missing table") };
+    assert!(!separate.collapse);
+    assert!(collapsed.collapse);
+}
