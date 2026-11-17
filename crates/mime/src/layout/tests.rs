@@ -495,3 +495,23 @@ fn word_12_conflicting_table_width_keeps_original_pixel_grid() {
     let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
     assert_eq!(t.width, Some(Width::Px(490)));
 }
+
+/// Veeam's status and transferred headings explicitly use nowrap and width:1%.
+#[test]
+fn veeam_no_wrap_table_cells_are_preserved() {
+    let html = r#"<table width="100%"><tr>
+        <td nowrap="" style="width:1%;padding:2px 3px">Success</td>
+        <td style="width:1%">Other</td>
+        <td style="white-space:nowrap">Transferred</td>
+        <td width="85">795 MB</td>
+    </tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let cells = &table.rows[0];
+    assert_eq!(cells.len(), 4);
+    assert_eq!(cells[0].width, Some(Width::Percent(1)));
+    assert_eq!(cells[0].padding, Some([2, 3, 2, 3]));
+    assert!(cells[0].nowrap);
+    assert!(!cells[1].nowrap);
+    assert!(cells[2].nowrap);
+}
