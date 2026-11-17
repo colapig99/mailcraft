@@ -465,8 +465,10 @@ fn colspan_mismatch_does_not_remove_sender_borders() {
 /// tables merely because their HTML cellspacing was zero.
 #[test]
 fn collapse_mode_is_explicit_in_html_layout() {
-    let a = html_layout(r#"<table cellspacing="0"><tr><td>A</td></tr></table>"#);
-    let b = html_layout(r#"<table style="border-collapse:collapse"><tr><td>A</td></tr></table>"#);
+    // A single-cell table may be simplified to ordinary content by the
+    // parser. Two columns ensure this checks real table-layout metadata.
+    let a = html_layout(r#"<table cellspacing="0"><tr><td>A</td><td>B</td></tr></table>"#);
+    let b = html_layout(r#"<table style="border-collapse:collapse"><tr><td>A</td><td>B</td></tr></table>"#);
     let Some(Block::Table(separate)) = a.first() else { panic!("missing table") };
     let Some(Block::Table(collapsed)) = b.first() else { panic!("missing table") };
     assert!(!separate.collapse);
