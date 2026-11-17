@@ -97,6 +97,9 @@ pub struct Table {
     /// said; none with `border-collapse: collapse`); `None` for a box laid out with CSS: none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<u16>,
+    /// Whether CSS requests collapsed borders. Keeps old cached layouts valid.
+    #[serde(default)]
+    pub collapse: bool,
     /// Room inside each of its cells that sets none of its own (`cellpadding`, HTML's 1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding: Option<u16>,
