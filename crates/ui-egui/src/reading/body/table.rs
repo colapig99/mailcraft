@@ -156,7 +156,25 @@ pub(crate) fn shared_column_widths(
     let cells: Vec<mime::layout::Cell> = columns.iter().take(count).map(|w| mime::layout::Cell {
         width: *w, span: 1, ..Default::default()
     }).collect();
-    let (tracks, _) = cell_widths(&cells, columns, content, width, spacing);
+    let (mut tracks, _) = cell_widths(&cells, columns, content, width, spacing);
+    // For a fully fixed pixel grid, preserve proportions when its container
+    // is wider than the individual style widths (Word 12's pt vs px exports).
+    // cell_widths normally assigns all leftover room to the last column.
+    if columns.iter().take(count).all(|w| matches!(w, Some(mime::layout::Width::Px(_)))) {
+        let total = tracks.iter().sum::<f32>();
+        let available = (width - spacing * count.saturating_sub(1) as f32).max(1.0);
+        if total > 0.0 && (total - available).abs() > 0.5 {
+            // Use the sender's original relative column widths, not the
+            // already stretched final track from cell_widths.
+            let raw: Vec<f32> = columns.iter().take(count).filter_map(|w| {
+                if let Some(mime::layout::Width::Px(px)) = w { Some(*px as f32) } else { None }
+            }).collect();
+            let raw_total = raw.iter().sum::<f32>();
+            if raw_total > 0.0 && raw.len() == count {
+                tracks = raw.iter().map(|px| px / raw_total * available).collect();
+            }
+        }
+    }
     (tracks.len() == count).then_some(tracks)
 }
 
