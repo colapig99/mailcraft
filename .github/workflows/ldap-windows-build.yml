@@ -54,6 +54,8 @@ jobs:
           toolchain: '1.98.0'
       - name: Test HTML Excel table border regression
         run: cargo test --locked -p mailcraft-mime excel_css_cell_borders_survive_layout
+      - name: Test Word table empty spacer cells
+        run: cargo test --locked -p mailcraft-mime word_report_keeps_empty_spacer_cells
       - name: Test shared Word table column tracks
         run: cargo test --locked -p mailcraft-ui-egui word_report_colspan_and_ranking_share_one_grid
       - name: Build unsigned Windows POC executable
