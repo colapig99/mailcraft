@@ -1,0 +1,17 @@
+[package]
+name = "mailcraft-webview2-poc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+# Deliberately independent of the MailCraft workspace and Cargo.lock:
+# the production app retains its existing dependencies and renderer.
+[workspace]
+
+[target.'cfg(windows)'.dependencies]
+wry = "=0.57.2"
+winit = "=0.30.12"
+mail-parser = { version = "1.0.1", features = ["full_encoding"] }
+ammonia = "=4.2.3"
+regex = "1"
