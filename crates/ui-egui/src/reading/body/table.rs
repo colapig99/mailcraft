@@ -265,6 +265,28 @@ pub(crate) fn wide_bordered_grid(rows: &[Vec<mime::layout::Cell>], table_width: 
     })
 }
 
+/// Excel-generated weekend duty roster: a fixed 853px, seven-column
+/// border-collapsed grid. Unlike a wide purchase report, some blank cells
+/// omit width attributes, so classify by the complete first-row pixel grid.
+/// Keep the exception narrow to protect all existing table layouts.
+pub(crate) fn excel_weekend_roster_grid(
+    rows: &[Vec<mime::layout::Cell>],
+    table_width: Option<mime::layout::Width>,
+) -> bool {
+    use mime::layout::Width;
+    const TRACKS: [u32; 7] = [47, 88, 97, 87, 236, 155, 143];
+    matches!(table_width, Some(Width::Px(853)))
+        && rows.len() >= 5
+        && rows.iter().all(|r| {
+            r.len() == TRACKS.len()
+                && r.iter().all(|c| c.span.max(1) == 1 && c.rowspan <= 1)
+        })
+        && rows.first().is_some_and(|first| {
+            first.iter().zip(TRACKS).all(|(c, px)| c.width == Some(Width::Px(px))
+                && c.borders.right.is_some() && c.borders.bottom.is_some())
+        })
+}
+
 /// For wide bordered Excel/MSHTML grids only, assign a shared border to the
 /// *later*-painted cell. This prevents the right/bottom neighbor's background
 /// covering it. It does not change grid geometry, widths, or source HTML.
