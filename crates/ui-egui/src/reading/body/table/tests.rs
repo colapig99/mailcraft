@@ -575,3 +575,54 @@ fn wide_grid_fallback_does_not_change_other_email_tables() {
     let auto = vec![vec![make(None, true); 18]; 4];
     assert!(!wide_bordered_grid(&auto, Some(Width::Px(1890))));
 }
+
+/// MIS weekend duty EML: Excel 7-column 853px grid with widths sourced
+/// from the first row and empty width-less cells in subsequent rows.
+#[test]
+fn excel_weekend_roster_keeps_continuous_grid_borders() {
+    use mime::layout::{Border, Borders, Width};
+    const TRACKS: [u32; 7] = [47, 88, 97, 87, 236, 155, 143];
+    let black = Border { width: 1, color: [0, 0, 0] };
+    let borders = Borders {
+        top: Some(black), right: Some(black),
+        bottom: Some(black), left: Some(black),
+    };
+    let mut rows: Vec<Vec<Cell>> = (0..5).map(|row| TRACKS.iter().map(|px| Cell {
+        width: if row == 0 || row == 4 { Some(Width::Px(*px)) } else { None },
+        span: 1, rowspan: 1, borders,
+        ..Default::default()
+    }).collect()).collect();
+    assert!(excel_weekend_roster_grid(&rows, Some(Width::Px(853))));
+    collapse_wide_grid_borders(&mut rows);
+    assert_eq!(rows[0][0].borders.right, None);
+    assert_eq!(rows[0][1].borders.left, Some(black));
+    assert_eq!(rows[0][0].borders.bottom, None);
+    assert_eq!(rows[1][0].borders.top, Some(black));
+    assert_eq!(rows[4][6].borders.bottom, Some(black));
+    // Column sizes and all content remain unchanged by border ownership.
+    assert_eq!(rows[0].iter().map(|c| c.width).collect::<Vec<_>>(),
+        TRACKS.iter().map(|x| Some(Width::Px(*x))).collect::<Vec<_>>());
+}
+
+/// A seven-column table alone is not enough to activate the roster rule.
+/// Protect normal Outlook, Veeam, PCM and Gmail tables from this code path.
+#[test]
+fn excel_weekend_roster_does_not_affect_other_seven_column_tables() {
+    use mime::layout::{Border, Borders, Width};
+    let b = Border { width: 1, color: [0, 0, 0] };
+    let first = [47u32, 88, 97, 87, 236, 155, 143];
+    let cell = |w| Cell { width: Some(Width::Px(w)), span: 1, rowspan: 1,
+        borders: Borders { right: Some(b), bottom: Some(b), ..Default::default() },
+        ..Default::default() };
+    let rows = vec![first.iter().map(|w| cell(*w)).collect::<Vec<_>>(); 5];
+    assert!(!excel_weekend_roster_grid(&rows, Some(Width::Px(854))));
+    let mut other = rows.clone();
+    other[0][4].width = Some(Width::Px(235));
+    assert!(!excel_weekend_roster_grid(&other, Some(Width::Px(853))));
+    let mut merged = rows.clone();
+    merged[2][0].span = 2;
+    assert!(!excel_weekend_roster_grid(&merged, Some(Width::Px(853))));
+    let mut borderless = rows;
+    borderless[0][0].borders = Borders::default();
+    assert!(!excel_weekend_roster_grid(&borderless, Some(Width::Px(853))));
+}
