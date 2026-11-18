@@ -88,9 +88,9 @@ mod windows {
 
     pub(crate) fn pages(raw: &[u8]) -> Result<[String; 2], String> {
         let parsed = MessageParser::default().parse(raw).ok_or("Could not parse EML")?;
-        let source = parsed.html_body(0)
-            .map(str::to_owned)
-            .or_else(|| parsed.text_body(0).map(|x| format!("<pre>{}</pre>", escape_html(x))))
+        let source = parsed.body_html(0)
+            .map(|x| x.into_owned())
+            .or_else(|| parsed.body_text(0).map(|x| format!("<pre>{}</pre>", escape_html(&x))))
             .ok_or("No HTML or text body in EML")?;
         if source.len() > MAX_HTML_BYTES {
             return Err("HTML body too large for safe WebView2 NavigateToString POC".into());
