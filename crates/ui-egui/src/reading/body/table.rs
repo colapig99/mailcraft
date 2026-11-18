@@ -243,6 +243,58 @@ pub(crate) fn collapse_shared_borders(rows: &mut [Vec<mime::layout::Cell>]) {
     }
 }
 
+/// Detect wide MSHTML purchase grids that explicitly specify every column
+/// and paint a border on virtually every cell. These are susceptible to a
+/// background painted later covering the preceding cell's collapsed stroke.
+/// Keep this structural check narrow: ordinary, merged, auto-width, or
+/// borderless tables continue to use the established #94 behavior.
+pub(crate) fn wide_bordered_grid(rows: &[Vec<mime::layout::Cell>], table_width: Option<mime::layout::Width>) -> bool {
+    if !matches!(table_width, Some(mime::layout::Width::Px(w)) if w >= 1200)
+        || rows.len() < 3
+        || rows.first().is_none_or(|r| r.len() < 16)
+    {
+        return false;
+    }
+    let count = rows[0].len();
+    rows.iter().all(|r| {
+        r.len() == count
+            && r.iter().all(|c| c.span.max(1) == 1 && c.rowspan <= 1
+                && matches!(c.width, Some(mime::layout::Width::Px(_))))
+    }) && rows.first().is_some_and(|r| {
+        r.iter().filter(|c| c.borders.right.is_some() && c.borders.bottom.is_some()).count() >= 16
+    })
+}
+
+/// For wide bordered Excel/MSHTML grids only, assign a shared border to the
+/// *later*-painted cell. This prevents the right/bottom neighbor's background
+/// covering it. It does not change grid geometry, widths, or source HTML.
+pub(crate) fn collapse_wide_grid_borders(rows: &mut [Vec<mime::layout::Cell>]) {
+    fn pick(a: Option<mime::layout::Border>, b: Option<mime::layout::Border>) -> Option<mime::layout::Border> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(if b.width > a.width { b } else { a }),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+    for row in rows.iter_mut() {
+        for i in 0..row.len().saturating_sub(1) {
+            let (left, right) = row.split_at_mut(i + 1);
+            let border = pick(left[i].borders.right, right[0].borders.left);
+            left[i].borders.right = None;
+            right[0].borders.left = border;
+        }
+    }
+    for i in 0..rows.len().saturating_sub(1) {
+        let (above, below) = rows.split_at_mut(i + 1);
+        for (upper, lower) in above[i].iter_mut().zip(below[0].iter_mut()) {
+            let border = pick(upper.borders.bottom, lower.borders.top);
+            upper.borders.bottom = None;
+            lower.borders.top = border;
+        }
+    }
+}
+
 /// Resolve a fully specified Word/Excel column grid once for the whole table.
 /// For partially defined grids use the existing content-driven layout.
 pub(crate) fn shared_column_widths(
