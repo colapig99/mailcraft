@@ -366,6 +366,11 @@ impl Body<'_> {
                     // A source rowspan occupies its columns in subsequent rows even
                     // though the sender omits those <td> tags. Expand only the
                     // ephemeral paint layout; never change the stored HTML.
+                    // The very specific Excel weekend roster is rendered with
+                    // one grid overlay after layout, instead of separate cell
+                    // strokes that can stop short of the tallest cell in a row.
+                    let roster = table.collapse && table::excel_weekend_roster_grid(&table.rows, table.width);
+                    let roster_stroke = roster.then(|| table.rows[0][0].borders.bottom.or(table.rows[0][0].borders.right)).flatten();
                     let prepared = (table.collapse || table.rows.iter().flatten().any(|c| c.rowspan > 1)).then(|| {
                         let mut t = table.clone();
                         if t.rows.iter().flatten().any(|c| c.rowspan > 1) {
@@ -375,9 +380,13 @@ impl Body<'_> {
                             // The wide MSHTML purchase grid has 18 explicit columns.
                             // Paint shared borders on the later cell so its background
                             // cannot cover them; keep every other table on #94 logic.
-                            if table::wide_bordered_grid(&t.rows, t.width)
-                                || table::excel_weekend_roster_grid(&t.rows, t.width)
-                            {
+                            if roster {
+                                // All source borders are represented by the
+                                // overlay; never paint duplicates beneath it.
+                                for c in t.rows.iter_mut().flatten() {
+                                    c.borders = Default::default();
+                                }
+                            } else if table::wide_bordered_grid(&t.rows, t.width) {
                                 table::collapse_wide_grid_borders(&mut t.rows);
                             } else {
                                 table::collapse_shared_borders(&mut t.rows);
@@ -429,8 +438,19 @@ impl Body<'_> {
                                 // Word/Excel tables specify one set of column widths across
                                 // all rows. Resolve these tracks once, not once per row.
                                 let tracks = table::shared_column_widths(&table.rows, &columns, &measures.columns, inner, spacing);
+                                let grid_x = ui.cursor().left();
+                                let mut grid_rows = Vec::new();
+                                if roster {
+                                    grid_rows.push(ui.cursor().top());
+                                }
                                 for row in &table.rows {
                                     self.row(st, ui, row, &columns, &measures.columns, tracks.as_deref(), inner, page, room, depth);
+                                    if roster {
+                                        grid_rows.push(ui.cursor().top());
+                                    }
+                                }
+                                if let (Some(border), Some(grid_tracks)) = (roster_stroke, tracks.as_deref()) {
+                                    table::paint_excel_roster_grid(ui.painter(), grid_x, grid_tracks, &grid_rows, border);
                                 }
                                 slot
                             });
