@@ -523,3 +523,55 @@ fn ordinary_percent_table_does_not_force_content_minima() {
     let tracks = shared_column_widths(&[row], &cols, &fit, 1000.0, 0.0).expect("fixed percentages");
     assert!(tracks[0] < 30.0, "ordinary percent column unexpectedly expanded: {tracks:?}");
 }
+
+/// The real MIS Web Buy email has 19 rows, 18 fully specified pixel columns,
+/// width 1888px, and explicit cell borders. A later-painted cell must own
+/// the common stroke so its background cannot hide the preceding cell's line.
+#[test]
+fn mis_purchase_18_column_collapsed_border_ownership() {
+    use mime::layout::{Border, Borders, Width};
+    let ink = Border { width: 1, color: [0, 0, 0] };
+    let widths: [u32; 18] = [45, 79, 373, 218, 72, 72, 104, 79, 124, 94, 97, 72, 72, 99, 72, 72, 72, 72];
+    assert_eq!(widths.iter().sum::<u32>(), 1888);
+    let mut rows: Vec<Vec<Cell>> = (0..19).map(|_| widths.iter().map(|w| Cell {
+        width: Some(Width::Px(*w)), span: 1, rowspan: 1,
+        borders: Borders { top: Some(ink), right: Some(ink), bottom: Some(ink), left: Some(ink) },
+        ..Default::default()
+    }).collect()).collect();
+    assert!(wide_bordered_grid(&rows, Some(Width::Px(1888))));
+    collapse_wide_grid_borders(&mut rows);
+    // Right/lower cells are drawn after left/upper backgrounds.
+    assert_eq!(rows[0][0].borders.right, None);
+    assert_eq!(rows[0][1].borders.left, Some(ink));
+    assert_eq!(rows[0][0].borders.bottom, None);
+    assert_eq!(rows[1][0].borders.top, Some(ink));
+    // Outer borders are still present.
+    assert_eq!(rows[0][0].borders.top, Some(ink));
+    assert_eq!(rows[0][0].borders.left, Some(ink));
+    assert_eq!(rows[18][17].borders.bottom, Some(ink));
+    assert_eq!(rows[18][17].borders.right, Some(ink));
+}
+
+/// PCM, Veeam, lottery, narrow, merged and borderless tables retain the
+/// existing renderer branch regardless of the email's sender/client.
+#[test]
+fn wide_grid_fallback_does_not_change_other_email_tables() {
+    use mime::layout::{Border, Borders, Width};
+    let ink = Border { width: 1, color: [0, 0, 0] };
+    let make = |width: Option<Width>, styled: bool| -> Cell {
+        Cell { width, span: 1, rowspan: 1,
+            borders: if styled { Borders { right: Some(ink), bottom: Some(ink), ..Default::default() } } else { Borders::default() },
+            ..Default::default()
+        }
+    };
+    let narrow = vec![vec![make(Some(Width::Px(100)), true); 8]; 4];
+    assert!(!wide_bordered_grid(&narrow, Some(Width::Px(800))));
+    let borderless = vec![vec![make(Some(Width::Px(105)), false); 18]; 4];
+    assert!(!wide_bordered_grid(&borderless, Some(Width::Px(1890))));
+    let merged = vec![vec![make(Some(Width::Px(105)), true); 18]; 4];
+    let mut merged = merged;
+    merged[1][3].span = 2;
+    assert!(!wide_bordered_grid(&merged, Some(Width::Px(1890))));
+    let auto = vec![vec![make(None, true); 18]; 4];
+    assert!(!wide_bordered_grid(&auto, Some(Width::Px(1890))));
+}
