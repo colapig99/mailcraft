@@ -292,6 +292,53 @@ pub(crate) fn excel_weekend_roster_grid(
         })
 }
 
+/// The five-row Excel weekend roster needs vertical lines covering the full
+/// rendered row height. Painting each individual cell edge before all row
+/// heights have settled can leave short ticks instead of a continuous grid.
+/// Paint the complete grid *after* all rows; do not change content layout.
+pub(crate) fn excel_roster_grid_segments(
+    x: f32,
+    tracks: &[f32],
+    row_edges: &[f32],
+) -> Vec<(egui::Pos2, egui::Pos2)> {
+    if tracks.len() != 7 || row_edges.len() != 6
+        || !x.is_finite()
+        || tracks.iter().any(|w| !w.is_finite() || *w <= 0.0)
+        || row_edges.iter().any(|y| !y.is_finite())
+        || row_edges.windows(2).any(|w| w[1] < w[0])
+    {
+        return Vec::new();
+    }
+    let top = row_edges[0];
+    let bottom = row_edges[5];
+    let right = x + tracks.iter().sum::<f32>();
+    let mut segments = Vec::with_capacity(14);
+    for &y in row_edges {
+        segments.push((egui::pos2(x, y), egui::pos2(right, y)));
+    }
+    let mut xx = x;
+    segments.push((egui::pos2(xx, top), egui::pos2(xx, bottom)));
+    for &w in tracks {
+        xx += w;
+        segments.push((egui::pos2(xx, top), egui::pos2(xx, bottom)));
+    }
+    segments
+}
+
+pub(crate) fn paint_excel_roster_grid(
+    painter: &egui::Painter,
+    x: f32,
+    tracks: &[f32],
+    row_edges: &[f32],
+    border: mime::layout::Border,
+) {
+    let c = border.color;
+    let stroke = egui::Stroke::new(f32::from(border.width), Color32::from_rgb(c[0], c[1], c[2]));
+    for (a, b) in excel_roster_grid_segments(x, tracks, row_edges) {
+        painter.line_segment([a, b], stroke);
+    }
+}
+
 /// For wide bordered Excel/MSHTML grids only, assign a shared border to the
 /// *later*-painted cell. This prevents the right/bottom neighbor's background
 /// covering it. It does not change grid geometry, widths, or source HTML.
