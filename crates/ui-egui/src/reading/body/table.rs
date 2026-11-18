@@ -274,16 +274,21 @@ pub(crate) fn excel_weekend_roster_grid(
     table_width: Option<mime::layout::Width>,
 ) -> bool {
     use mime::layout::Width;
-    const TRACKS: [u32; 7] = [47, 88, 97, 87, 236, 155, 143];
-    matches!(table_width, Some(Width::Px(853)))
+    // The sender gives both width=853 and style="width:639pt" (=852px).
+    // Each column likewise has both integer HTML width and point CSS width;
+    // the existing parser correctly gives inline CSS precedence.
+    const HTML_TRACKS: [u32; 7] = [47, 88, 97, 87, 236, 155, 143];
+    const CSS_TRACKS: [u32; 7] = [46, 88, 97, 86, 236, 154, 142];
+    matches!(table_width, Some(Width::Px(852 | 853)))
         && rows.len() >= 5
         && rows.iter().all(|r| {
-            r.len() == TRACKS.len()
+            r.len() == HTML_TRACKS.len()
                 && r.iter().all(|c| c.span.max(1) == 1 && c.rowspan <= 1)
         })
         && rows.first().is_some_and(|first| {
-            first.iter().zip(TRACKS).all(|(c, px)| c.width == Some(Width::Px(px))
-                && c.borders.right.is_some() && c.borders.bottom.is_some())
+            (first.iter().zip(HTML_TRACKS).all(|(c, px)| c.width == Some(Width::Px(px)))
+                || first.iter().zip(CSS_TRACKS).all(|(c, px)| c.width == Some(Width::Px(px))))
+                && first.iter().all(|c| c.borders.right.is_some() && c.borders.bottom.is_some())
         })
 }
 
