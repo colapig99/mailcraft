@@ -85,6 +85,10 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui veeam_qplchn_percent_nowrap_shared_grid_uses_content_minimum
       - name: Test ordinary percentage tables unchanged
         run: cargo test --locked -p mailcraft-ui-egui ordinary_percent_table_does_not_force_content_minima
+      - name: Test MIS 18-column purchase grid border ordering
+        run: cargo test --locked -p mailcraft-ui-egui mis_purchase_18_column_collapsed_border_ownership
+      - name: Test normal email tables retain prior rendering
+        run: cargo test --locked -p mailcraft-ui-egui wide_grid_fallback_does_not_change_other_email_tables
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
