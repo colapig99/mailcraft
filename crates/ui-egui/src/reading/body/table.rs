@@ -301,7 +301,20 @@ pub(crate) fn excel_roster_grid_segments(
     tracks: &[f32],
     row_edges: &[f32],
 ) -> Vec<(egui::Pos2, egui::Pos2)> {
-    if tracks.len() != 7 || row_edges.len() != 6
+    if tracks.len() != 7 || row_edges.len() != 6 {
+        return Vec::new();
+    }
+    excel_complete_grid_segments(x, tracks, row_edges)
+}
+
+/// A full-height border overlay for well-formed, explicitly bordered fixed
+/// Excel grids. It uses actual rendered row positions, never guessed heights.
+pub(crate) fn excel_complete_grid_segments(
+    x: f32,
+    tracks: &[f32],
+    row_edges: &[f32],
+) -> Vec<(egui::Pos2, egui::Pos2)> {
+    if tracks.len() < 2 || row_edges.len() < 2
         || !x.is_finite()
         || tracks.iter().any(|w| !w.is_finite() || *w <= 0.0)
         || row_edges.iter().any(|y| !y.is_finite())
@@ -310,9 +323,9 @@ pub(crate) fn excel_roster_grid_segments(
         return Vec::new();
     }
     let top = row_edges[0];
-    let bottom = row_edges[5];
+    let bottom = *row_edges.last().expect("checked nonempty");
     let right = x + tracks.iter().sum::<f32>();
-    let mut segments = Vec::with_capacity(14);
+    let mut segments = Vec::with_capacity(row_edges.len() + tracks.len() + 1);
     for &y in row_edges {
         segments.push((egui::pos2(x, y), egui::pos2(right, y)));
     }
@@ -334,7 +347,7 @@ pub(crate) fn paint_excel_roster_grid(
 ) {
     let c = border.color;
     let stroke = egui::Stroke::new(f32::from(border.width), Color32::from_rgb(c[0], c[1], c[2]));
-    for (a, b) in excel_roster_grid_segments(x, tracks, row_edges) {
+    for (a, b) in excel_complete_grid_segments(x, tracks, row_edges) {
         painter.line_segment([a, b], stroke);
     }
 }
