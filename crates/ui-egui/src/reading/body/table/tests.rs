@@ -593,6 +593,15 @@ fn excel_weekend_roster_keeps_continuous_grid_borders() {
         ..Default::default()
     }).collect()).collect();
     assert!(excel_weekend_roster_grid(&rows, Some(Width::Px(853))));
+    // Real EML uses style="width:639pt" and cell style widths in pt.
+    // This is the actual path taken by MailCraft's CSS parser.
+    let css_px = [46, 88, 97, 86, 236, 154, 142];
+    let css_rows: Vec<Vec<Cell>> = (0..5).map(|row| css_px.iter().map(|px| Cell {
+        width: if row == 0 || row == 4 { Some(Width::Px(*px)) } else { None },
+        span: 1, rowspan: 1, borders,
+        ..Default::default()
+    }).collect()).collect();
+    assert!(excel_weekend_roster_grid(&css_rows, Some(Width::Px(852))));
     collapse_wide_grid_borders(&mut rows);
     assert_eq!(rows[0][0].borders.right, None);
     assert_eq!(rows[0][1].borders.left, Some(black));
