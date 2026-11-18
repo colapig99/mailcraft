@@ -99,6 +99,8 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui excel_weekend_full_height_grid_overlay_geometry
       - name: Test weekend roster overlay safety
         run: cargo test --locked -p mailcraft-ui-egui excel_roster_grid_overlay_rejects_unrelated_geometry
+      - name: Test MIS twenty-row fixed purchase grid overlay
+        run: cargo test --locked -p mailcraft-ui-egui mis_purchase_twenty_row_full_grid_geometry
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
