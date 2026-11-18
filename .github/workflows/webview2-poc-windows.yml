@@ -1,0 +1,30 @@
+name: WebView2 HTML renderer POC (Windows)
+on:
+  push:
+    branches: [feature/html-webview2-poc]
+    paths:
+      - 'poc/webview2/**'
+      - '.github/workflows/webview2-poc-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  webview2-poc:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: WebView2 POC security and HTML layout tests
+        run: cargo test --manifest-path poc/webview2/Cargo.toml
+      - name: Build standalone Windows WebView2 comparison tool
+        run: cargo build --manifest-path poc/webview2/Cargo.toml --release
+      - name: Upload comparison tool (not a MailCraft replacement)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mailcraft-webview2-poc-windows
+          path: poc/webview2/target/release/mailcraft-webview2-poc.exe
+          if-no-files-found: error
