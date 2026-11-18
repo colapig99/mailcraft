@@ -370,7 +370,11 @@ impl Body<'_> {
                     // one grid overlay after layout, instead of separate cell
                     // strokes that can stop short of the tallest cell in a row.
                     let roster = table.collapse && table::excel_weekend_roster_grid(&table.rows, table.width);
-                    let roster_stroke = roster.then(|| table.rows[0][0].borders.bottom.or(table.rows[0][0].borders.right)).flatten();
+                    let purchase_grid = table.collapse
+                        && table::wide_bordered_grid(&table.rows, table.width)
+                        && table.rows.iter().flatten().all(|c| c.borders.right.is_some() && c.borders.bottom.is_some());
+                    let full_grid = roster || purchase_grid;
+                    let grid_stroke = full_grid.then(|| table.rows[0][0].borders.bottom.or(table.rows[0][0].borders.right)).flatten();
                     let prepared = (table.collapse || table.rows.iter().flatten().any(|c| c.rowspan > 1)).then(|| {
                         let mut t = table.clone();
                         if t.rows.iter().flatten().any(|c| c.rowspan > 1) {
@@ -380,7 +384,7 @@ impl Body<'_> {
                             // The wide MSHTML purchase grid has 18 explicit columns.
                             // Paint shared borders on the later cell so its background
                             // cannot cover them; keep every other table on #94 logic.
-                            if roster {
+                            if full_grid {
                                 // All source borders are represented by the
                                 // overlay; never paint duplicates beneath it.
                                 for c in t.rows.iter_mut().flatten() {
@@ -440,16 +444,16 @@ impl Body<'_> {
                                 let tracks = table::shared_column_widths(&table.rows, &columns, &measures.columns, inner, spacing);
                                 let grid_x = ui.cursor().left();
                                 let mut grid_rows = Vec::new();
-                                if roster {
+                                if full_grid {
                                     grid_rows.push(ui.cursor().top());
                                 }
                                 for row in &table.rows {
                                     self.row(st, ui, row, &columns, &measures.columns, tracks.as_deref(), inner, page, room, depth);
-                                    if roster {
+                                    if full_grid {
                                         grid_rows.push(ui.cursor().top());
                                     }
                                 }
-                                if let (Some(border), Some(grid_tracks)) = (roster_stroke, tracks.as_deref()) {
+                                if let (Some(border), Some(grid_tracks)) = (grid_stroke, tracks.as_deref()) {
                                     table::paint_excel_roster_grid(ui.painter(), grid_x, grid_tracks, &grid_rows, border);
                                 }
                                 slot
