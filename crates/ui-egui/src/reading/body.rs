@@ -372,7 +372,14 @@ impl Body<'_> {
                             t.rows = table::expand_rowspans(&t.rows);
                         }
                         if t.collapse {
-                            table::collapse_shared_borders(&mut t.rows);
+                            // The wide MSHTML purchase grid has 18 explicit columns.
+                            // Paint shared borders on the later cell so its background
+                            // cannot cover them; keep every other table on #94 logic.
+                            if table::wide_bordered_grid(&t.rows, t.width) {
+                                table::collapse_wide_grid_borders(&mut t.rows);
+                            } else {
+                                table::collapse_shared_borders(&mut t.rows);
+                            }
                         }
                         t
                     });
