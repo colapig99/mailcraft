@@ -836,3 +836,5 @@ Some fixes are ported from the sibling Craft apps, with their authors credited.
 - A command-line client.
 - A sample mailbox.
 - Packages for Windows, macOS and Linux.
+
+- Fixed-border, unmerged Excel MIS roster and purchase tables now draw one complete grid after measuring all rows, preventing short vertical strokes while leaving other mail table layouts untouched.
