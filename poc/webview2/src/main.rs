@@ -100,7 +100,7 @@ mod windows {
         // A real, clickable, no-JavaScript display switch works even when
         // the WebView child window has keyboard focus (winit F1/F2 may not).
         let compare = format!(
-            "<div class='compare'><label class='switch'><input type='checkbox' id='show-source'> Show sanitized HTML source instead of rendered email</label><section class='rendered'>{safe}</section><pre class='source'>{}</pre></div>",
+            "<div class='compare'><input type='checkbox' id='show-source'><label class='switch' for='show-source'> Show sanitized HTML source instead of rendered email</label><section class='rendered'>{safe}</section><pre class='source'>{}</pre></div>",
             escape_html(&safe)
         );
         let toggler_css = format!(
