@@ -661,3 +661,36 @@ fn excel_weekend_real_html_widths_select_safe_border_mode() {
     assert_eq!(t.width, Some(mime::layout::Width::Px(852)));
     assert!(excel_weekend_roster_grid(&t.rows, t.width), "{:?}", t.rows[0]);
 }
+
+/// The weekend duty table has five rendered rows but cells with different
+/// text heights. Its seven vertical boundaries must span all five rows,
+/// independent of the height of the text in each individual cell.
+#[test]
+fn excel_weekend_full_height_grid_overlay_geometry() {
+    let widths = [46.0, 88.0, 97.0, 86.0, 236.0, 154.0, 142.0];
+    let rows = [10.0, 34.0, 78.0, 109.0, 132.0, 156.0];
+    let lines = excel_roster_grid_segments(15.0, &widths, &rows);
+    assert_eq!(lines.len(), 14); // 6 horizontal, 8 full-height vertical
+    let right = 15.0 + widths.iter().sum::<f32>();
+    for (i, (a, b)) in lines.iter().take(6).enumerate() {
+        assert_eq!(a.y, rows[i]);
+        assert_eq!(b.y, rows[i]);
+        assert_eq!(a.x, 15.0);
+        assert_eq!(b.x, right);
+    }
+    for (a, b) in lines.iter().skip(6) {
+        assert_eq!(a.x, b.x);
+        assert_eq!(a.y, rows[0]);
+        assert_eq!(b.y, rows[5]);
+    }
+    assert_eq!(lines[6].0.x, 15.0);
+    assert_eq!(lines[13].0.x, right);
+}
+
+/// Never draw a synthetic overlay over unrelated or malformed tables.
+#[test]
+fn excel_roster_grid_overlay_rejects_unrelated_geometry() {
+    assert!(excel_roster_grid_segments(0.0, &[100.0; 6], &[0.0; 6]).is_empty());
+    assert!(excel_roster_grid_segments(0.0, &[100.0; 7], &[0.0; 5]).is_empty());
+    assert!(excel_roster_grid_segments(0.0, &[100.0; 7], &[0.0, 10.0, 8.0, 20.0, 30.0, 40.0]).is_empty());
+}
