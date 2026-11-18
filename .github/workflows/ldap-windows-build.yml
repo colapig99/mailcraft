@@ -95,6 +95,10 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui excel_weekend_roster_does_not_affect_other_seven_column_tables
       - name: Test actual weekend EML HTML CSS width parsing
         run: cargo test --locked -p mailcraft-ui-egui excel_weekend_real_html_widths_select_safe_border_mode
+      - name: Test complete weekend roster grid edges
+        run: cargo test --locked -p mailcraft-ui-egui excel_weekend_full_height_grid_overlay_geometry
+      - name: Test weekend roster overlay safety
+        run: cargo test --locked -p mailcraft-ui-egui excel_roster_grid_overlay_rejects_unrelated_geometry
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
