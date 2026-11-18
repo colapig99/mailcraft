@@ -93,6 +93,8 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui excel_weekend_roster_keeps_continuous_grid_borders
       - name: Test ordinary seven-column emails are not changed
         run: cargo test --locked -p mailcraft-ui-egui excel_weekend_roster_does_not_affect_other_seven_column_tables
+      - name: Test actual weekend EML HTML CSS width parsing
+        run: cargo test --locked -p mailcraft-ui-egui excel_weekend_real_html_widths_select_safe_border_mode
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
