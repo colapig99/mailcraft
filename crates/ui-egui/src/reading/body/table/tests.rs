@@ -694,3 +694,22 @@ fn excel_roster_grid_overlay_rejects_unrelated_geometry() {
     assert!(excel_roster_grid_segments(0.0, &[100.0; 7], &[0.0; 5]).is_empty());
     assert!(excel_roster_grid_segments(0.0, &[100.0; 7], &[0.0, 10.0, 8.0, 20.0, 30.0, 40.0]).is_empty());
 }
+
+/// The Oct 26 MIS purchase email has 20 rows and 18 explicit columns.
+/// Its continuous borders must span the height actually occupied by text,
+/// not the smaller height of an individual cell.
+#[test]
+fn mis_purchase_twenty_row_full_grid_geometry() {
+    let columns = [45.0, 79.0, 373.0, 218.0, 72.0, 72.0, 104.0, 79.0, 124.0,
+        94.0, 97.0, 72.0, 72.0, 99.0, 72.0, 72.0, 72.0, 72.0];
+    let heights: Vec<f32> = (0..=20).map(|i| i as f32 * 34.0).collect();
+    let segments = excel_complete_grid_segments(11.0, &columns, &heights);
+    assert_eq!(segments.len(), 21 + 19); // horizontal row lines + vertical column lines
+    let right = 11.0 + columns.iter().sum::<f32>();
+    assert_eq!(segments[0].0.x, 11.0);
+    assert_eq!(segments[0].1.x, right);
+    assert_eq!(segments[21].0.y, heights[0]);
+    assert_eq!(segments[21].1.y, heights[20]);
+    assert_eq!(segments[39].0.x, right);
+    assert!(excel_complete_grid_segments(0.0, &[2.0, f32::NAN], &[0.0, 10.0]).is_empty());
+}
