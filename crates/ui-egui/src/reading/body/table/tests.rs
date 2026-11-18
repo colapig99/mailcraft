@@ -523,3 +523,29 @@ fn ordinary_percent_table_does_not_force_content_minima() {
     let tracks = shared_column_widths(&[row], &cols, &fit, 1000.0, 0.0).expect("fixed percentages");
     assert!(tracks[0] < 30.0, "ordinary percent column unexpectedly expanded: {tracks:?}");
 }
+
+/// A border whose centre is visible but whose half-stroke is outside the
+/// reader viewport must remain fully visible. Interior and off-screen edges
+/// are deliberately untouched, preserving existing good email layouts.
+#[test]
+fn clipped_table_border_stroke_stays_visible_without_moving_interior_lines() {
+    assert_eq!(visible_stroke_axis(10.0, 10.0, 200.0, 1.0), 10.5);
+    assert_eq!(visible_stroke_axis(199.8, 10.0, 200.0, 1.0), 199.5);
+    assert_eq!(visible_stroke_axis(10.0, 10.0, 200.0, 2.0), 11.0);
+    assert_eq!(visible_stroke_axis(100.0, 10.0, 200.0, 1.0), 100.0);
+    assert_eq!(visible_stroke_axis(8.0, 10.0, 200.0, 1.0), 8.0);
+    assert_eq!(visible_stroke_axis(202.0, 10.0, 200.0, 1.0), 202.0);
+}
+
+/// Border collapse, normal cells and frame rounding must not add any borders
+/// to an ordinary layout table that originally had no CSS cell borders.
+#[test]
+fn borderless_email_cells_remain_borderless_after_collapse() {
+    let html = r#"<table style="border-collapse:collapse"><tr><td>Left</td><td>Right</td></tr>
+      <tr><td>Bottom</td><td>Other</td></tr></table>"#;
+    let blocks = html_layout(html);
+    let Some(Block::Table(table)) = blocks.first() else { panic!("{blocks:?}") };
+    let mut rows = table.rows.clone();
+    collapse_shared_borders(&mut rows);
+    assert!(rows.iter().flatten().all(|c| c.borders == mime::layout::Borders::default()));
+}
