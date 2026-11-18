@@ -635,3 +635,29 @@ fn excel_weekend_roster_does_not_affect_other_seven_column_tables() {
     borderless[0][0].borders = Borders::default();
     assert!(!excel_weekend_roster_grid(&borderless, Some(Width::Px(853))));
 }
+
+/// Exercise the actual HTML -> CSS -> MailCraft layout path rather than only
+/// hand-built Cells: sender supplies 853 HTML pixels and 639pt CSS.
+#[test]
+fn excel_weekend_real_html_widths_select_safe_border_mode() {
+    let mut html = String::from(r#"<table width="853" style="WIDTH:639pt;BORDER-COLLAPSE:collapse" cellspacing="0"><tbody>"#);
+    for row in 0..5 {
+        html.push_str("<tr>");
+        for (i, pt) in [35, 66, 73, 65, 177, 116, 107].iter().enumerate() {
+            if row == 2 && i == 2 {
+                html.push_str(r#"<td style="BORDER-RIGHT:windowtext .5pt solid;BORDER-BOTTOM:windowtext .5pt solid">MIS</td>"#);
+            } else {
+                html.push_str(&format!(
+                    r#"<td style="WIDTH:{pt}pt;BORDER-RIGHT:windowtext .5pt solid;BORDER-BOTTOM:windowtext .5pt solid">X</td>"#
+                ));
+            }
+        }
+        html.push_str("</tr>");
+    }
+    html.push_str("</tbody></table>");
+    let blocks = html_layout(&html);
+    let Some(Block::Table(t)) = blocks.first() else { panic!("{blocks:?}") };
+    assert!(t.collapse);
+    assert_eq!(t.width, Some(mime::layout::Width::Px(852)));
+    assert!(excel_weekend_roster_grid(&t.rows, t.width), "{:?}", t.rows[0]);
+}
