@@ -105,12 +105,37 @@ impl Body<'_> {
     }
 }
 
-/// Paint only the four explicitly styled cell edges.
+/// Put a stroke completely inside the viewport when the *original edge* is
+/// already visible, but its antialiasing extends past the clip. Never pull an
+/// off-screen edge into view. This only affects borders touching the reader's
+/// clipping boundary; all interior cell geometry remains unchanged.
+fn visible_stroke_axis(edge: f32, clip_min: f32, clip_max: f32, width: f32) -> f32 {
+    let half = (width * 0.5).max(0.0);
+    if edge >= clip_min && edge < clip_min + half {
+        clip_min + half
+    } else if edge <= clip_max && edge > clip_max - half {
+        clip_max - half
+    } else {
+        edge
+    }
+}
+
+/// Paint only sender-defined cell edges. Anti-aliasing at a scroll viewport's
+/// clip boundary must not make 1px strokes disappear until the next repaint.
 fn paint_borders(painter: &egui::Painter, rect: egui::Rect, b: mime::layout::Borders) {
-    let edge = |a, z, border: Option<mime::layout::Border>| {
+    let clip = painter.clip_rect();
+    let edge = |a: egui::Pos2, z: egui::Pos2, border: Option<mime::layout::Border>| {
         if let Some(border) = border {
             let c = border.color;
-            painter.line_segment([a, z], egui::Stroke::new(f32::from(border.width), Color32::from_rgb(c[0], c[1], c[2])));
+            let width = f32::from(border.width);
+            let (a, z) = if (a.y - z.y).abs() < 0.01 {
+                let y = visible_stroke_axis(a.y, clip.top(), clip.bottom(), width);
+                (egui::pos2(a.x, y), egui::pos2(z.x, y))
+            } else {
+                let x = visible_stroke_axis(a.x, clip.left(), clip.right(), width);
+                (egui::pos2(x, a.y), egui::pos2(x, z.y))
+            };
+            painter.line_segment([a, z], egui::Stroke::new(width, Color32::from_rgb(c[0], c[1], c[2])));
         }
     };
     edge(rect.left_top(), rect.right_top(), b.top);
