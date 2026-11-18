@@ -89,6 +89,10 @@ jobs:
         run: cargo test --locked -p mailcraft-ui-egui mis_purchase_18_column_collapsed_border_ownership
       - name: Test normal email tables retain prior rendering
         run: cargo test --locked -p mailcraft-ui-egui wide_grid_fallback_does_not_change_other_email_tables
+      - name: Test MIS Excel weekend duty roster borders
+        run: cargo test --locked -p mailcraft-ui-egui excel_weekend_roster_keeps_continuous_grid_borders
+      - name: Test ordinary seven-column emails are not changed
+        run: cargo test --locked -p mailcraft-ui-egui excel_weekend_roster_does_not_affect_other_seven_column_tables
       - name: Build unsigned Windows POC executable
         run: cargo build --locked --release -p mailcraft
       - name: Collect test binary
