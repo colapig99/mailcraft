@@ -40,6 +40,23 @@ index or Refresh. The HTML email is placed in a sandboxed iframe without script,
 same-origin or form permissions, even though a small toolbar-only script is
 enabled for dropdown interaction.
 
+## Office HTML comparison mode
+
+Choose **Display → Filtered HTML** for the existing safe default, **Filtered
+HTML source** for the resulting markup, or **Original Office HTML
+(diagnostic)** to compare the sender's original layout without HTML
+sanitization. This option exists **only in this standalone local POC**.
+
+The original-content preview stays inside an iframe with an empty
+`sandbox` attribute. Its parent page applies CSP restrictions to scripts,
+remote resources, frames and navigation. This is an experimental diagnostic
+feature, **not a production-safe authorization to render arbitrary mailbox
+HTML**. Avoid opening files from untrusted sources in this mode.
+
+If the original HTML looks correct but the filtered version does not, focus
+on HTML/CSS sanitization. If both exhibit the same error, investigate
+Chromium compatibility with Word/Excel HTML and source markup.
+
 ## Manual regression matrix (do not commit real customer EMLs)
 
 1. PCM overtime: yellow merged headers, blue headcount cells, historical months.
