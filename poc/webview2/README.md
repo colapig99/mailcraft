@@ -77,6 +77,19 @@ If the original HTML looks correct but the filtered version does not, focus
 on HTML/CSS sanitization. If both exhibit the same error, investigate
 Chromium compatibility with Word/Excel HTML and source markup.
 
+## Office compatibility opt-in experiment
+
+**Display → Office compatibility (experimental)** keeps safe Excel
+`<font>` runs during sanitization and reconciles only Word-labelled
+`MsoNormalTable` width attributes when the HTML pixel width is more
+than 10% larger than the CSS point-based width. It does not synthesize
+missing cell borders. The default **Filtered HTML** stays unchanged.
+
+Compare the PCM (first table numerical overlap) and lottery (Word-table
+widths and border gaps) EMLs in both modes. Check existing MIS purchase,
+MIS weekend and Veeam emails for regression in default mode before adopting
+any change. Original Office HTML remains an isolated diagnostic only.
+
 ## Manual regression matrix (do not commit real customer EMLs)
 
 1. PCM overtime: yellow merged headers, blue headcount cells, historical months.
