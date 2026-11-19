@@ -13,7 +13,7 @@ mod windows {
         keyboard::{KeyCode, PhysicalKey},
         window::{Window, WindowId},
     };
-    use wry::{WebView, WebViewBuilder};
+    use wry::{WebView, WebViewBuilder, Rect};
 
     const MAX_EML_BYTES: u64 = 12 * 1024 * 1024;
     const MAX_HTML_BYTES: usize = 1_500_000;
@@ -137,18 +137,43 @@ mod windows {
                 event_loop.exit();
                 return;
             };
+            let size = window.inner_size();
+            eprintln!("WebView2 POC: host client size={}x{}, HTML bytes={}", size.width, size.height, self.views[self.mode].len());
+            // Use the Wry/winit recommended Windows child view, sized to
+            // the host's client coordinates rather than the screen position.
+            let bounds = Rect {
+                position: wry::dpi::PhysicalPosition::new(0, 0).into(),
+                size: wry::dpi::PhysicalSize::new(size.width.max(1), size.height.max(1)).into(),
+            };
             let builder = WebViewBuilder::new()
+                .with_bounds(bounds)
                 .with_html(self.views[self.mode].clone())
                 .with_javascript_disabled()
                 .with_devtools(false)
                 .with_incognito(true)
                 .with_general_autofill_enabled(false)
-                .with_navigation_handler(|url| url == "about:blank");
-            let Ok(webview) = builder.build(&window) else {
-                eprintln!("WebView2 not available. Install Microsoft Edge WebView2 Runtime.");
-                event_loop.exit();
-                return;
+                .with_on_page_load_handler(|event, url| eprintln!("WebView2 page event: {event:?} URL: {url}"))
+                .with_navigation_handler(|url| {
+                    // NavigateToString is about:blank in WebView2. Log all
+                    // navigation attempts and reject unexpected destinations.
+                    let ok = url == "about:blank";
+                    eprintln!("WebView2 navigation: {url} allowed={ok}");
+                    ok
+                });
+            let webview = match builder.build_as_child(&window) {
+                Ok(webview) => webview,
+                Err(e) => {
+                    eprintln!("WebView2 child creation failed: {e}. Check Edge WebView2 Runtime.");
+                    event_loop.exit();
+                    return;
+                }
             };
+            if let Err(e) = webview.set_bounds(Rect {
+                position: wry::dpi::PhysicalPosition::new(0, 0).into(),
+                size: wry::dpi::PhysicalSize::new(size.width.max(1), size.height.max(1)).into(),
+            }) {
+                eprintln!("WebView2 initial child bounds failed: {e}");
+            }
             self.webview = Some(webview);
             self.window = Some(window);
         }
@@ -156,6 +181,17 @@ mod windows {
         fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
             match event {
                 WindowEvent::CloseRequested => event_loop.exit(),
+                WindowEvent::Resized(size) => {
+                    if let Some(webview) = self.webview.as_ref() {
+                        let rect = Rect {
+                            position: wry::dpi::PhysicalPosition::new(0, 0).into(),
+                            size: wry::dpi::PhysicalSize::new(size.width.max(1), size.height.max(1)).into(),
+                        };
+                        if let Err(e) = webview.set_bounds(rect) {
+                            eprintln!("WebView2 resized bounds failed: {e}");
+                        }
+                    }
+                },
                 WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::Escape) => event_loop.exit(),
