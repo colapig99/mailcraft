@@ -74,7 +74,7 @@ mod windows {
         files.iter().enumerate().map(|(i, path)| {
             let filename = path.file_name().unwrap_or_default().to_string_lossy();
             let sel = if i == selected { " selected" } else { "" };
-            format!("<option value=\"{i}\"{sel}>{}</option>", escape_html(&filename))
+            format!("<option value=\"{i}\"{sel}>{}</option>", escape_attribute(&filename))
         }).collect::<String>()
     }
 
