@@ -494,7 +494,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
             assert!(css.contains("border:.5pt solid #000000"), "Excel border CSS stripped: {css}");
             assert!(css.contains("white-space:nowrap"), "Excel nowrap CSS stripped: {css}");
             assert!(filtered.contains("table-layout:fixed"), "Excel fixed layout stripped: {filtered}");
-            assert!(filtered.contains("colspan=\\"2\\""), "merged cell stripped: {filtered}");
+            assert!(filtered.contains(r#"colspan="2""#), "merged cell stripped: {filtered}");
         }
 
         #[test]
