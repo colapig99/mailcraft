@@ -120,7 +120,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
             .add_generic_attributes(&[
                 "style", "class", "width", "height", "align", "valign",
                 "bgcolor", "cellpadding", "cellspacing", "border",
-                "colspan", "rowspan", "nowrap",
+                "colspan", "rowspan", "span", "nowrap",
             ])
             .filter_style_properties(HashSet::from([
                 "width", "min-width", "max-width", "height", "min-height",
@@ -147,7 +147,11 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
         };
         let mut out = String::new();
         for cap in re.captures_iter(html) {
-            let css = cap.get(1).map_or("", |m| m.as_str());
+            let original = cap.get(1).map_or("", |m| m.as_str());
+            // Outlook/Excel may wrap CSS in legacy HTML comment markers.
+            // Strip those exact markers before applying the strict gate.
+            let cleaned = original.replace("<!--", "").replace("-->", "");
+            let css = cleaned.as_str();
             if css.len() > 128 * 1024 || out.len() + css.len() > 128 * 1024 {
                 break;
             }
@@ -472,6 +476,18 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
             assert!(!allowed_navigation("file:///C:/secret", &approved));
             assert!(!allowed_navigation("data:text/html;base64,SGFja2Vk", &approved));
             assert!(!allowed_navigation("data:image/png;base64,SGFja2Vk", &approved));
+        }
+
+        #[test]
+        fn office_comment_wrapped_css_keeps_safe_grid_rules() {
+            let css = safe_stylesheets(
+                "<style><!-- .xl65 { border:1px solid black;background-color:#ccffcc;width:90pt } --></style>"
+            );
+            assert!(css.contains(".xl65"), "{css}");
+            assert!(css.contains("border:1px solid black"), "{css}");
+            assert!(css.contains("width:90pt"), "{css}");
+            assert!(safe_stylesheets("<style><!-- .xl65{background:url(https://tracker.example/x)} --></style>").is_empty());
+            assert!(safe_stylesheets("<style>.bad{content:'</style><script>alert(1)</script>'}</style>").is_empty());
         }
 
         #[test]
