@@ -112,12 +112,12 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     /// Rewrite only CSS declarations into standards-compliant syntax, then
     /// run the normal allowlist sanitizer. This is not a sanitizer bypass.
     fn normalize_office_declarations(input: &str) -> String {
-        let colors = regex::Regex::new(r"(?i)\\bwindowtext\\b").expect("constant regex");
-        let windows = regex::Regex::new(r"(?i)\\bwindow\\b").expect("constant regex");
+        let colors = regex::Regex::new(r"(?i)\bwindowtext\b").expect("constant regex");
+        let windows = regex::Regex::new(r"(?i)\bwindow\b").expect("constant regex");
         let recolored = colors.replace_all(input, "#000000");
         let recolored = windows.replace_all(&recolored, "#ffffff").into_owned();
         let border = regex::Regex::new(
-            r"(?i)(border(?:-(?:left|right|top|bottom))?\\s*:\\s*)(#[0-9a-f]{6})\\s+((?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|pt))\\s+(solid|dotted|dashed|double)"
+            r"(?i)(border(?:-(?:left|right|top|bottom))?\s*:\s*)(#[0-9a-f]{6})\s+((?:\d+(?:\.\d+)?|\.\d+)(?:px|pt))\s+(solid|dotted|dashed|double)"
         ).expect("constant regex");
         border.replace_all(&recolored, "${1}${3} ${4} ${2}").into_owned()
     }
@@ -125,7 +125,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     /// Normalize only quoted style attribute values. Do not alter visible
     /// email text; Ammonia still validates all resulting CSS declarations.
     fn normalize_office_inline_styles(html: &str) -> String {
-        let style = regex::Regex::new(r#"(?is)\\bstyle\\s*=\\s*("[^"]*"|'[^']*')"#)
+        let style = regex::Regex::new(r#"(?is)\bstyle\s*=\s*("[^"]*"|'[^']*')"#)
             .expect("constant regex");
         style.replace_all(html, |caps: &regex::Captures<'_>| {
             let whole = caps.get(0).expect("match").as_str();
@@ -464,7 +464,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
             assert!(sanitized.contains("border-right:"), "Office right border removed: {sanitized}");
             assert!(sanitized.contains("border-bottom:"), "Office lower border removed: {sanitized}");
             assert!(sanitized.contains("background-color:"), "Office fill removed: {sanitized}");
-            assert!(sanitized.contains("class=\\"xl165\\""), "Office class lost: {sanitized}");
+            assert!(sanitized.contains(r#"class="xl165""#), "Office class lost: {sanitized}");
         }
 
         #[test]
