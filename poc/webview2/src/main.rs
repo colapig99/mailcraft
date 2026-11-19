@@ -102,11 +102,13 @@ select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 
 <label for="emails">EML file:</label><select id="emails" aria-label="Select email">{options}</select>
 <label for="display">Display:</label><select id="display" aria-label="HTML display mode">{modes}</select>
 <button type="button" id="refresh">Refresh list</button>
+<button type="button" id="export">Export filtered HTML</button>
 <span>{} files — local EML only</span></header>
 <iframe title="Isolated email preview" sandbox="" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
 <script nonce="mailcraft-local-ui">
 document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
 document.getElementById('refresh').addEventListener('click', () => window.ipc.postMessage('refresh'));
+document.getElementById('export').addEventListener('click', () => window.ipc.postMessage('export-filtered'));
 document.getElementById('display').addEventListener('change', e => window.ipc.postMessage('mode:' + e.target.value));
 </script></body></html>"#, files.len());
         if shell.len() > 2 * 1024 * 1024 { return Err("HTML plus local file picker exceeds the 2 MiB POC limit".into()); }
@@ -266,7 +268,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         Ok([formatted, inspect, source, direct])
     }
 
-    enum ViewerEvent { Select(usize), Mode(usize), Refresh }
+    enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered }
 
     struct Viewer {
         window: Option<Window>,
@@ -350,6 +352,8 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                     let body = request.body();
                     if body == "refresh" {
                         let _ = proxy.send_event(ViewerEvent::Refresh);
+                    } else if body == "export-filtered" {
+                        let _ = proxy.send_event(ViewerEvent::ExportFiltered);
                     } else if let Some(index) = body.strip_prefix("mode:").and_then(|v| v.parse::<usize>().ok()) {
                         if index < 4 { let _ = proxy.send_event(ViewerEvent::Mode(index)); }
                     } else if let Some(index) = body.strip_prefix("select:").and_then(|v| v.parse::<usize>().ok()) {
@@ -404,6 +408,25 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 }
                 ViewerEvent::Select(index) if index < self.files.len() => {
                     if self.selected != index { self.selected = index; self.show_selected(); }
+                }
+                ViewerEvent::ExportFiltered => {
+                    // Explicit local diagnostic export. It writes only the
+                    // already sanitized, script-disabled HTML document and
+                    // never the raw untrusted EML or remote content.
+                    if let Some(file) = self.files.get(self.selected) {
+                        let name = file.file_name().unwrap_or_default().to_string_lossy();
+                        let output = self.directory.join(format!("{name}.filtered.html"));
+                        match fs::OpenOptions::new().write(true).create_new(true).open(&output) {
+                            Ok(mut out) => {
+                                use std::io::Write;
+                                match out.write_all(self.views[3].as_bytes()) {
+                                    Ok(()) => eprintln!("Sanitized HTML exported to: {}", output.display()),
+                                    Err(e) => eprintln!("Failed writing diagnostic HTML: {e}"),
+                                }
+                            }
+                            Err(e) => eprintln!("Export not created (existing file or permission): {} — {e}", output.display()),
+                        }
+                    }
                 }
                 ViewerEvent::Refresh => {
                     match eml_files(&self.directory) {
@@ -506,6 +529,16 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
             let shell = shell_page(&pages[3], &names, 0, 3).unwrap();
             assert!(shell.contains(r#"<option value="3" selected>Direct filtered document (experimental)</option>"#));
             assert!(shell.contains(r#"sandbox="""#));
+        }
+
+        #[test]
+        fn export_filtered_html_is_explicit_and_never_auto_sends_content() {
+            let file = vec![PathBuf::from("PCM.eml")];
+            let shell = shell_page("<p>test</p>", &file, 0, 0).unwrap();
+            assert!(shell.contains("Export filtered HTML"));
+            assert!(shell.contains("window.ipc.postMessage('export-filtered')"));
+            assert!(shell.contains(r#"sandbox="""#));
+            assert!(!shell.contains("https://"));
         }
 
         #[test]
