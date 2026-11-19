@@ -466,7 +466,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
 <td class="xl165" style="BORDER-RIGHT:windowtext .5pt solid; BORDER-BOTTOM:windowtext .5pt solid; BACKGROUND-COLOR:#ccffcc; WIDTH:47px">Item</td>
 <td style="BORDER-LEFT:windowtext .5pt solid">Description</td></tr></table>"#;
             let normalized = normalize_office_inline_styles(src);
-            assert!(normalized.contains("BORDER-RIGHT:.5pt solid #000000"), "{normalized}");
+            assert!(normalized.contains("border-right:.5pt solid #000000"), "{normalized}");
             let sanitized = safe_fragment(src);
             assert!(sanitized.contains("<table"), "{sanitized}");
             assert!(sanitized.contains("border-right:"), "Office right border removed: {sanitized}");
