@@ -4,19 +4,20 @@
 //! NOT YET embedded in MailCraft. Never connects to Exchange or changes mail.
 #[cfg(windows)]
 mod windows {
-    use std::{collections::HashSet, fs, path::PathBuf};
+    use std::{collections::HashSet, fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
     use mail_parser::MessageParser;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     use winit::{
         application::ApplicationHandler,
         event::{ElementState, WindowEvent},
-        event_loop::{ActiveEventLoop, EventLoop},
+        event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
         keyboard::{KeyCode, PhysicalKey},
         window::{Window, WindowId},
     };
     use wry::{WebView, WebViewBuilder, Rect};
 
     const MAX_EML_BYTES: u64 = 12 * 1024 * 1024;
+    const MAX_FILES: usize = 500;
     const MAX_HTML_BYTES: usize = 1_500_000;
     const CSP: &str = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
     /// The only permitted data: navigations are the two HTML documents that
@@ -45,6 +46,66 @@ mod windows {
     fn escape_html(input: &str) -> String {
         input.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
     }
+
+    fn escape_attribute(input: &str) -> String {
+        escape_html(input).replace('"', "&quot;").replace('\'', "&#39;")
+    }
+
+    /// Enumerate files only from the directory containing this executable.
+    /// A web page never chooses a raw filesystem path.
+    fn eml_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+        let mut files = Vec::new();
+        let entries = fs::read_dir(dir).map_err(|e| format!("Cannot read EXE folder: {e}"))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Cannot enumerate EML files: {e}"))?;
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path).map_err(|e| format!("Cannot inspect EML: {e}"))?;
+            if !meta.file_type().is_file() { continue; }
+            if path.extension().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("eml")) {
+                files.push(path);
+            }
+        }
+        files.sort_by_cached_key(|path| path.file_name().unwrap_or_default().to_string_lossy().to_lowercase());
+        files.truncate(MAX_FILES);
+        Ok(files)
+    }
+
+    fn option_list(files: &[PathBuf], selected: usize) -> String {
+        files.iter().enumerate().map(|(i, path)| {
+            let filename = path.file_name().unwrap_or_default().to_string_lossy();
+            let sel = if i == selected { " selected" } else { "" };
+            format!("<option value=\"{i}\"{sel}>{}</option>", escape_html(&filename))
+        }).collect::<String>()
+    }
+
+    fn selected_index(command: &str, count: usize) -> Option<usize> {
+        command.strip_prefix("select:")?.parse::<usize>().ok().filter(|index| *index < count)
+    }
+
+    fn shell_page(email_html: &str, files: &[PathBuf], selected: usize) -> Result<String, String> {
+        // A tiny trusted UI script runs in the parent. Email HTML is placed in
+        // a sandboxed srcdoc frame without allow-scripts or allow-same-origin.
+        // No email markup can invoke the privileged Wry IPC bridge.
+        let options = option_list(files, selected);
+        let frame = escape_attribute(email_html);
+        let shell = format!(r#"<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-mailcraft-local-ui'; style-src 'unsafe-inline'; frame-src 'self' about:; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<style>html,body{{margin:0;height:100%;overflow:hidden;font:13px Segoe UI,sans-serif;background:#fff}}
+#layout{{display:flex;flex-direction:column;height:100vh}}header{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px;background:#edf3ff;border-bottom:1px solid #c4ccd7}}
+select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 12px}}iframe{{flex:1;min-height:0;width:100%;border:0;background:#fff}}</style></head>
+<body><div id="layout"><header><strong>MailCraft WebView2 POC</strong>
+<label for="emails">EML file:</label><select id="emails" aria-label="Select email">{options}</select>
+<button type="button" id="refresh">Refresh list</button>
+<span>{} files — local EML only</span></header>
+<iframe title="Isolated email preview" sandbox="" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
+<script nonce="mailcraft-local-ui">
+document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
+document.getElementById('refresh').addEventListener('click', () => window.ipc.postMessage('refresh'));
+</script></body></html>"#, files.len());
+        if shell.len() > 2 * 1024 * 1024 { return Err("HTML plus local file picker exceeds the 2 MiB POC limit".into()); }
+        Ok(shell)
+    }
+
 
     /// Do not expose raw untrusted HTML to a browser. Preserve safe table
     /// geometry and a strict subset of inline CSS for the compatibility test.
@@ -139,14 +200,52 @@ mod windows {
         Ok([formatted, inspect])
     }
 
+    enum ViewerEvent { Select(usize), Refresh }
+
     struct Viewer {
         window: Option<Window>,
         webview: Option<WebView>,
         views: [String; 2],
         mode: usize,
+        directory: PathBuf,
+        files: Vec<PathBuf>,
+        selected: usize,
+        proxy: EventLoopProxy<ViewerEvent>,
+        approved_base64: Arc<Mutex<[String; 2]>>,
     }
 
-    impl ApplicationHandler for Viewer {
+    impl Viewer {
+        fn selected_document(&self) -> Result<String, String> {
+            shell_page(&self.views[self.mode], &self.files, self.selected)
+        }
+
+        fn show_selected(&mut self) {
+            let Some(path) = self.files.get(self.selected) else { return; };
+            let result = (|| {
+                let data = fs::read(path).map_err(|e| format!("Unable to read selected EML: {e}"))?;
+                if data.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
+                let views = pages(&data)?;
+                let html = shell_page(&views[0], &self.files, self.selected)?;
+                Ok::<_, String>((views, html))
+            })();
+            match result {
+                Ok((views, html)) => {
+                    self.views = views;
+                    self.mode = 0;
+                    let encoded = [STANDARD.encode(html.as_bytes()), String::new()];
+                    if let Ok(mut allowed) = self.approved_base64.lock() { *allowed = encoded; }
+                    if let Some(webview) = &self.webview {
+                        if let Err(e) = webview.load_html(&html) {
+                            eprintln!("Could not display selected EML: {e}");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("EML selection error: {e}"),
+            }
+        }
+    }
+
+    impl ApplicationHandler<ViewerEvent> for Viewer {
         fn resumed(&mut self, event_loop: &ActiveEventLoop) {
             if self.window.is_some() {
                 return;
@@ -167,14 +266,28 @@ mod windows {
                 position: wry::dpi::PhysicalPosition::new(0, 0).into(),
                 size: wry::dpi::PhysicalSize::new(size.width.max(1), size.height.max(1)).into(),
             };
-            let approved_base64 = [
-                STANDARD.encode(self.views[0].as_bytes()),
-                STANDARD.encode(self.views[1].as_bytes()),
-            ];
+            let initial = match self.selected_document() {
+                Ok(html) => html,
+                Err(error) => { eprintln!("Cannot prepare email selection UI: {error}"); event_loop.exit(); return; }
+            };
+            if let Ok(mut allowed) = self.approved_base64.lock() {
+                *allowed = [STANDARD.encode(initial.as_bytes()), String::new()];
+            }
+            let approved_base64 = self.approved_base64.clone();
+            let proxy = self.proxy.clone();
             let builder = WebViewBuilder::new()
                 .with_bounds(bounds)
-                .with_html(self.views[self.mode].clone())
-                .with_javascript_disabled()
+                .with_html(initial)
+                // Only our trusted shell runs a tiny script. Mail content is
+                // isolated inside an iframe sandbox with scripts forbidden.
+                .with_ipc_handler(move |request| {
+                    let body = request.body();
+                    if body == "refresh" {
+                        let _ = proxy.send_event(ViewerEvent::Refresh);
+                    } else if let Some(index) = body.strip_prefix("select:").and_then(|v| v.parse::<usize>().ok()) {
+                        let _ = proxy.send_event(ViewerEvent::Select(index));
+                    }
+                })
                 .with_devtools(false)
                 .with_incognito(true)
                 .with_general_autofill_enabled(false)
@@ -183,7 +296,7 @@ mod windows {
                     // Wry's with_html/load_html internally navigate to an
                     // encoded data:text/html URL on this Windows backend.
                     // Accept ONLY the exact two sanitized POC documents.
-                    let ok = allowed_navigation(&url, &approved_base64);
+                    let ok = approved_base64.lock().is_ok_and(|list| allowed_navigation(&url, &*list)) || url == "about:srcdoc";
                     let scheme = url.split(':').next().unwrap_or("unknown");
                     eprintln!("WebView2 navigation: scheme={scheme}, length={}, allowed={ok}", url.len());
                     ok
@@ -204,6 +317,26 @@ mod windows {
             }
             self.webview = Some(webview);
             self.window = Some(window);
+        }
+
+        fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ViewerEvent) {
+            match event {
+                ViewerEvent::Select(index) if index < self.files.len() => {
+                    if self.selected != index { self.selected = index; self.show_selected(); }
+                }
+                ViewerEvent::Refresh => {
+                    match eml_files(&self.directory) {
+                        Ok(files) => {
+                            let old_path = self.files.get(self.selected).cloned();
+                            self.files = files;
+                            self.selected = old_path.and_then(|p| self.files.iter().position(|q| q == &p)).unwrap_or(0);
+                            if !self.files.is_empty() { self.show_selected(); }
+                        }
+                        Err(e) => eprintln!("EML refresh failed: {e}"),
+                    }
+                }
+                _ => {}
+            }
         }
 
         fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -228,8 +361,13 @@ mod windows {
                             if next != self.mode {
                                 self.mode = next;
                                 if let Some(webview) = self.webview.as_ref() {
-                                    if let Err(e) = webview.load_html(&self.views[next]) {
-                                        eprintln!("Unable to change display mode: {e}");
+                                    if let Ok(html) = self.selected_document() {
+                                        if let Ok(mut approved) = self.approved_base64.lock() {
+                                            *approved = [STANDARD.encode(html.as_bytes()), String::new()];
+                                        }
+                                        if let Err(e) = webview.load_html(&html) {
+                                            eprintln!("Unable to change display mode: {e}");
+                                        }
                                     }
                                 }
                             }
@@ -243,19 +381,28 @@ mod windows {
     }
 
     pub(super) fn run() -> Result<(), String> {
-        let mut args = std::env::args_os().skip(1);
-        let path = args.next().map(PathBuf::from).ok_or(
-            "Usage: mailcraft-webview2-poc.exe path-to-message.eml (F1 HTML, F2 source)"
-        )?;
-        let meta = fs::metadata(&path).map_err(|e| format!("Cannot read EML: {e}"))?;
-        if meta.len() > MAX_EML_BYTES {
-            return Err("EML exceeds 12 MiB POC limit".into());
+        let executable = std::env::current_exe().map_err(|e| format!("Cannot locate EXE: {e}"))?;
+        let directory = executable.parent().ok_or("Cannot locate EXE directory")?.to_path_buf();
+        let files = eml_files(&directory)?;
+        if files.is_empty() {
+            return Err(format!("No .eml files in EXE folder: {}", directory.display()));
         }
-        let raw = fs::read(path).map_err(|e| format!("Cannot open EML: {e}"))?;
+        let requested = std::env::args_os().nth(1).map(PathBuf::from);
+        let selected = requested.as_ref().and_then(|p| {
+            let filename = p.file_name()?;
+            files.iter().position(|candidate| candidate.file_name() == Some(filename))
+        }).unwrap_or(0);
+        let raw = fs::read(&files[selected]).map_err(|e| format!("Cannot read EML: {e}"))?;
+        if raw.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
         let views = pages(&raw)?;
-        let event_loop = EventLoop::new().map_err(|e| format!("Window event loop failed: {e}"))?;
-        event_loop.run_app(&mut Viewer { window: None, webview: None, views, mode: 0 })
-            .map_err(|e| format!("WebView2 event loop failed: {e}"))
+        let event_loop = EventLoop::<ViewerEvent>::with_user_event().build()
+            .map_err(|e| format!("Window event loop failed: {e}"))?;
+        let proxy = event_loop.create_proxy();
+        eprintln!("Loaded {} EML files from {}", files.len(), directory.display());
+        event_loop.run_app(&mut Viewer {
+            window: None, webview: None, views, mode: 0, directory, files,
+            selected, proxy, approved_base64: Arc::new(Mutex::new([String::new(), String::new()])),
+        }).map_err(|e| format!("WebView2 event loop failed: {e}"))
     }
 
     #[cfg(test)]
@@ -270,6 +417,24 @@ mod windows {
             assert!(!s.contains("onclick"));
             assert!(!s.contains("script"));
             assert!(!s.contains("tracker.example"));
+        }
+
+        #[test]
+        fn html_file_selector_is_sandboxed_and_escapes_names() {
+            let f = vec![PathBuf::from(r#"C:\mailtests\A & \"B\".eml"#), PathBuf::from(r#"C:\mailtests\second.eml"#)];
+            let html = shell_page("<html><body>Test</body></html>", &f, 1).unwrap();
+            assert!(html.contains("sandbox=\"\""));
+            assert!(html.contains("A &amp; &quot;B&quot;.eml"));
+            assert!(html.contains("<option value=\"1\" selected>second.eml</option>"));
+            assert!(html.contains("window.ipc.postMessage"));
+            assert!(!html.contains("file:///"));
+        }
+
+        #[test]
+        fn dropdown_selection_must_be_index_in_known_list() {
+            assert_eq!(selected_index("select:1", 2), Some(1));
+            assert_eq!(selected_index("select:2", 2), None);
+            assert_eq!(selected_index("select:../../secret", 2), None);
         }
 
         #[test]
