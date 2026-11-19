@@ -53,6 +53,12 @@ remote resources, frames and navigation. This is an experimental diagnostic
 feature, **not a production-safe authorization to render arbitrary mailbox
 HTML**. Avoid opening files from untrusted sources in this mode.
 
+A fourth option, **Direct filtered document (experimental)**, removes the
+additional comparison wrappers around the sanitized HTML. It is useful for
+checking whether those wrappers interfere with legacy Excel fixed-width and
+merged-cell layout. The default display mode remains unchanged, and the
+original sender's script/remote-resource restrictions remain in force.
+
 If the original HTML looks correct but the filtered version does not, focus
 on HTML/CSS sanitization. If both exhibit the same error, investigate
 Chromium compatibility with Word/Excel HTML and source markup.
