@@ -156,7 +156,10 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
                 break;
             }
             let lower = css.to_ascii_lowercase();
-            if css.contains('<')
+            // Reject truncated rules (including a fake </style> inside a
+            // quoted CSS value), not just obvious network-capable constructs.
+            if css.matches('{').count() != css.matches('}').count()
+                || css.contains('<')
                 || lower.contains("url(")
                 || lower.contains("@import")
                 || lower.contains("expression(")
