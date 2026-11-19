@@ -152,7 +152,7 @@ mod windows {
                 .with_devtools(false)
                 .with_incognito(true)
                 .with_general_autofill_enabled(false)
-                .with_on_page_load_handler(|event, url| eprintln!("WebView2 page event: {event:?} URL: {url}"))
+                .with_on_page_load_handler(|_event, url| eprintln!("WebView2 page load callback URL: {url}"))
                 .with_navigation_handler(|url| {
                     // NavigateToString is about:blank in WebView2. Log all
                     // navigation attempts and reject unexpected destinations.
