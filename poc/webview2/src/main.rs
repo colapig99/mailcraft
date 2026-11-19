@@ -6,6 +6,7 @@
 mod windows {
     use std::{collections::HashSet, fs, path::PathBuf};
     use mail_parser::MessageParser;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     use winit::{
         application::ApplicationHandler,
         event::{ElementState, WindowEvent},
@@ -18,6 +19,27 @@ mod windows {
     const MAX_EML_BYTES: u64 = 12 * 1024 * 1024;
     const MAX_HTML_BYTES: usize = 1_500_000;
     const CSP: &str = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+    /// The only permitted data: navigations are the two HTML documents that
+    /// this process generated and sanitized itself. Do not accept arbitrary
+    /// data URLs, web URLs, or file URLs from untrusted mail content.
+    fn allowed_navigation(url: &str, approved_base64: &[String; 2]) -> bool {
+        if url == "about:blank" {
+            return true;
+        }
+        let (header, body) = match url.split_once(',') {
+            Some(parts) => parts,
+            None => return false,
+        };
+        let header = header.to_ascii_lowercase();
+        if !header.starts_with("data:text/html")
+            || !header.ends_with(";base64")
+            || body.len() > 2_800_000
+        {
+            return false;
+        }
+        approved_base64.iter().any(|expected| expected == body)
+    }
+
     const HELP: &str = "<div style='position:sticky;top:0;background:#edf3ff;border-bottom:1px solid #aaa;padding:7px;font:13px Segoe UI,sans-serif;z-index:1000'>WebView2 comparison POC — F1: formatted HTML / F2: sanitized source / Esc: close. No network images or scripts.</div>";
 
     fn escape_html(input: &str) -> String {
@@ -145,6 +167,10 @@ mod windows {
                 position: wry::dpi::PhysicalPosition::new(0, 0).into(),
                 size: wry::dpi::PhysicalSize::new(size.width.max(1), size.height.max(1)).into(),
             };
+            let approved_base64 = [
+                STANDARD.encode(self.views[0].as_bytes()),
+                STANDARD.encode(self.views[1].as_bytes()),
+            ];
             let builder = WebViewBuilder::new()
                 .with_bounds(bounds)
                 .with_html(self.views[self.mode].clone())
@@ -153,11 +179,13 @@ mod windows {
                 .with_incognito(true)
                 .with_general_autofill_enabled(false)
                 .with_on_page_load_handler(|_event, url| eprintln!("WebView2 page load callback URL: {url}"))
-                .with_navigation_handler(|url| {
-                    // NavigateToString is about:blank in WebView2. Log all
-                    // navigation attempts and reject unexpected destinations.
-                    let ok = url == "about:blank";
-                    eprintln!("WebView2 navigation: {url} allowed={ok}");
+                .with_navigation_handler(move |url| {
+                    // Wry's with_html/load_html internally navigate to an
+                    // encoded data:text/html URL on this Windows backend.
+                    // Accept ONLY the exact two sanitized POC documents.
+                    let ok = allowed_navigation(&url, &approved_base64);
+                    let scheme = url.split(':').next().unwrap_or("unknown");
+                    eprintln!("WebView2 navigation: scheme={scheme}, length={}, allowed={ok}", url.len());
                     ok
                 });
             let webview = match builder.build_as_child(&window) {
@@ -242,6 +270,22 @@ mod windows {
             assert!(!s.contains("onclick"));
             assert!(!s.contains("script"));
             assert!(!s.contains("tracker.example"));
+        }
+
+        #[test]
+        fn navigation_allows_only_generated_html_data_urls() {
+            let pages = ["<p>Known email</p>".to_string(), "<pre>Source</pre>".to_string()];
+            let approved = [
+                STANDARD.encode(pages[0].as_bytes()),
+                STANDARD.encode(pages[1].as_bytes()),
+            ];
+            assert!(allowed_navigation("about:blank", &approved));
+            assert!(allowed_navigation(&format!("data:text/html;base64,{}", approved[0]), &approved));
+            assert!(allowed_navigation(&format!("data:text/html;charset=utf-8;base64,{}", approved[1]), &approved));
+            assert!(!allowed_navigation("https://external.example", &approved));
+            assert!(!allowed_navigation("file:///C:/secret", &approved));
+            assert!(!allowed_navigation("data:text/html;base64,SGFja2Vk", &approved));
+            assert!(!allowed_navigation("data:image/png;base64,SGFja2Vk", &approved));
         }
 
         #[test]
