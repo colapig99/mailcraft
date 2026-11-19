@@ -40,6 +40,20 @@ index or Refresh. The HTML email is placed in a sandboxed iframe without script,
 same-origin or form permissions, even though a small toolbar-only script is
 enabled for dropdown interaction.
 
+## Export the sanitized HTML for targeted investigation
+
+The **Export filtered HTML** button writes the currently selected EML's
+sanitized preview into the EXE folder as
+`<original filename>.eml.filtered.html`. The source EML is unchanged.
+The export is local and requires a click; no data is uploaded to GitHub,
+MailCraft or a remote service. An existing export is **not overwritten**.
+
+This diagnostic file contains the email content, including potentially
+confidential information. Review it before sharing. It lets us compare the
+exact HTML/CSS that WebView2 receives against the original EML, rather than
+guessing from screenshots. Do not treat this POC-exported HTML as a
+production-certified sanitizer output.
+
 ## Office HTML comparison mode
 
 Choose **Display → Filtered HTML** for the existing safe default, **Filtered
