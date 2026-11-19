@@ -107,6 +107,37 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     }
 
 
+    /// Legacy Excel and Outlook write border declarations in the order
+    /// "windowtext .5pt solid", which Chromium and CSS filters may reject.
+    /// Rewrite only CSS declarations into standards-compliant syntax, then
+    /// run the normal allowlist sanitizer. This is not a sanitizer bypass.
+    fn normalize_office_declarations(input: &str) -> String {
+        let colors = regex::Regex::new(r"(?i)\\bwindowtext\\b").expect("constant regex");
+        let windows = regex::Regex::new(r"(?i)\\bwindow\\b").expect("constant regex");
+        let recolored = colors.replace_all(input, "#000000");
+        let recolored = windows.replace_all(&recolored, "#ffffff").into_owned();
+        let border = regex::Regex::new(
+            r"(?i)(border(?:-(?:left|right|top|bottom))?\\s*:\\s*)(#[0-9a-f]{6})\\s+((?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|pt))\\s+(solid|dotted|dashed|double)"
+        ).expect("constant regex");
+        border.replace_all(&recolored, "${1}${3} ${4} ${2}").into_owned()
+    }
+
+    /// Normalize only quoted style attribute values. Do not alter visible
+    /// email text; Ammonia still validates all resulting CSS declarations.
+    fn normalize_office_inline_styles(html: &str) -> String {
+        let style = regex::Regex::new(r#"(?is)\\bstyle\\s*=\\s*("[^"]*"|'[^']*')"#)
+            .expect("constant regex");
+        style.replace_all(html, |caps: &regex::Captures<'_>| {
+            let whole = caps.get(0).expect("match").as_str();
+            // Keep the attribute name and the original quoting intact.
+            let quoted = caps.get(1).expect("quoted style value");
+            let quote_start = quoted.start() - caps.get(0).expect("match").start();
+            let raw = quoted.as_str();
+            format!("{}{}{}{}", &whole[..quote_start], &raw[..1],
+                normalize_office_declarations(&raw[1..raw.len()-1]), &raw[raw.len()-1..])
+        }).into_owned()
+    }
+
     /// Do not expose raw untrusted HTML to a browser. Preserve safe table
     /// geometry and a strict subset of inline CSS for the compatibility test.
     fn safe_fragment(html: &str) -> String {
@@ -135,7 +166,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
                 "table-layout", "display", "letter-spacing",
             ]))
             .url_relative(ammonia::UrlRelative::Deny);
-        cleaner.clean(html).to_string()
+        cleaner.clean(&normalize_office_inline_styles(html)).to_string()
     }
 
     /// Office emails often keep their widths and borders in class selectors.
@@ -151,6 +182,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
             // Outlook/Excel may wrap CSS in legacy HTML comment markers.
             // Strip those exact markers before applying the strict gate.
             let cleaned = original.replace("<!--", "").replace("-->", "");
+            let cleaned = normalize_office_declarations(&cleaned);
             let css = cleaned.as_str();
             if css.len() > 128 * 1024 || out.len() + css.len() > 128 * 1024 {
                 break;
@@ -419,6 +451,29 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn converts_legacy_excel_windowtext_borders_without_stripping_table() {
+            let src = r#"<table style="BORDER-COLLAPSE:collapse"><tr>
+<td class="xl165" style="BORDER-RIGHT:windowtext .5pt solid; BORDER-BOTTOM:windowtext .5pt solid; BACKGROUND-COLOR:#ccffcc; WIDTH:47px">Item</td>
+<td style="BORDER-LEFT:windowtext .5pt solid">Description</td></tr></table>"#;
+            let normalized = normalize_office_inline_styles(src);
+            assert!(normalized.contains("BORDER-RIGHT:.5pt solid #000000"), "{normalized}");
+            let sanitized = safe_fragment(src);
+            assert!(sanitized.contains("<table"), "{sanitized}");
+            assert!(sanitized.contains("border-right:"), "Office right border removed: {sanitized}");
+            assert!(sanitized.contains("border-bottom:"), "Office lower border removed: {sanitized}");
+            assert!(sanitized.contains("background-color:"), "Office fill removed: {sanitized}");
+            assert!(sanitized.contains("class=\\"xl165\\""), "Office class lost: {sanitized}");
+        }
+
+        #[test]
+        fn keeps_office_class_styles_and_drops_remote_css() {
+            let css = safe_stylesheets("<style>.xl165 { BORDER-RIGHT:windowtext .5pt solid; BACKGROUND-COLOR:#ccffcc }</style>");
+            assert!(css.contains("border-right:") || css.contains("BORDER-RIGHT:"), "{css}");
+            assert!(css.contains("#000000"), "{css}");
+            assert!(safe_stylesheets("<style>.xl165 { background: URL(https://tracker.example/x) }</style>").is_empty());
+        }
 
         #[test]
         fn preserves_nested_table_geometry_and_styles() {
