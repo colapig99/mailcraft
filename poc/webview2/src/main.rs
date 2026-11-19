@@ -162,11 +162,11 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
             // Ammonia's defaults prioritize ordinary rich text, not complex
             // email grids. Explicitly retain safe structural table elements.
             .add_tags(&["table", "thead", "tbody", "tfoot", "tr", "td", "th",
-                "colgroup", "col", "caption"])
+                "colgroup", "col", "caption", "font"])
             .add_generic_attributes(&[
                 "style", "class", "width", "height", "align", "valign",
                 "bgcolor", "cellpadding", "cellspacing", "border",
-                "colspan", "rowspan", "span", "nowrap",
+                "colspan", "rowspan", "span", "nowrap", "face", "size",
             ])
             .filter_style_properties(HashSet::from([
                 "width", "min-width", "max-width", "height", "min-height",
@@ -541,6 +541,24 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
         /// Excel 9 PCM uses a large .xl stylesheet and fixed table layout.
         /// Preserving its selectors should not require turning off CSP.
+        /// Excel 9 uses <font> for cell-local runs, and its .fontNN
+        /// class selectors set the glyph metrics and right-aligned values.
+        /// Removing font nodes but keeping nowrap cell styles causes adjacent
+        /// runs to spill into neighboring fixed-width columns.
+        #[test]
+        fn preserve_legacy_excel_font_runs_without_active_markup() {
+            let html = r#"<table style="table-layout:fixed;width:824pt"><tr>
+<td class="xl109"><font class="font40" face="MingLiU" size="2" color="blue">15:30</font></td>
+<td class="xl115"><font class="font40" face="MingLiU" size="2">22:30</font></td>
+</tr></table><script>alert(1)</script>"#;
+            let cleaned = safe_fragment(html);
+            assert!(cleaned.contains("<font"), "Removed Excel font runs: {cleaned}");
+            assert!(cleaned.contains(r#"class="font40""#), "Lost Excel font class: {cleaned}");
+            assert!(cleaned.contains(r#"face="MingLiU""#), "Lost local font face: {cleaned}");
+            assert!(cleaned.contains("table-layout:fixed"), "{cleaned}");
+            assert!(!cleaned.contains("alert("), "Script escaped sanitizer: {cleaned}");
+        }
+
         #[test]
         fn pcm_excel_css_classes_and_fixed_layout_survive() {
             let html = r#"<style><!--
