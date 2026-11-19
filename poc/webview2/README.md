@@ -16,11 +16,29 @@ cargo build --manifest-path poc/webview2/Cargo.toml --release
 .\poc\webview2\target\release\mailcraft-webview2-poc.exe "C:\mail-tests\sample.eml"
 ```
 
+## Choose an EML from the EXE folder
+
+Place your test `.eml` files in the same folder as
+`mailcraft-webview2-poc.exe`. Double-click the EXE or run it without
+arguments: it scans that EXE folder for up to 500 `.eml` files, sorts them by
+name, and selects the first one. The toolbar at the top includes an **EML file**
+dropdown and **Refresh list** button. Choosing another file switches its
+preview without closing the program. Refresh rescans after copying new files
+into the folder.
+
+A filename argument is still accepted to choose an initial EML **by basename
+from that same EXE folder**; it does not grant access to other folders.
+
 POC keyboard controls: **F1** for formatted WebView2 HTML, **F2** for its
-sanitized HTML source, **Esc** to close. The standalone tool can run next to
-an unchanged MailCraft installation for manual comparison: open the same EML
-in the native egui renderer and in the WebView2 tool. The direct in-reading-pane
-egui/WebView2 toggle remains a separate integration milestone.
+sanitized HTML source, **Esc** to close. The in-email checkbox can also switch
+between HTML layout and sanitized markup. The standalone tool can run next to
+an unchanged MailCraft installation for manual comparison. The direct
+in-reading-pane egui/WebView2 toggle remains a separate integration milestone.
+
+The toolbar is a trusted local UI and uses Wry IPC only for a numeric file
+index or Refresh. The HTML email is placed in a sandboxed iframe without script,
+same-origin or form permissions, even though a small toolbar-only script is
+enabled for dropdown interaction.
 
 ## Manual regression matrix (do not commit real customer EMLs)
 
