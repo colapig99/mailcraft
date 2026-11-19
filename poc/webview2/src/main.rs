@@ -421,7 +421,7 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
 
         #[test]
         fn html_file_selector_is_sandboxed_and_escapes_names() {
-            let f = vec![PathBuf::from(r#"C:\mailtests\A & \"B\".eml"#), PathBuf::from(r#"C:\mailtests\second.eml"#)];
+            let f = vec![PathBuf::from("A & \"B\".eml"), PathBuf::from(r#"C:\mailtests\second.eml"#)];
             let html = shell_page("<html><body>Test</body></html>", &f, 1).unwrap();
             assert!(html.contains("sandbox=\"\""));
             assert!(html.contains("A &amp; &quot;B&quot;.eml"));
