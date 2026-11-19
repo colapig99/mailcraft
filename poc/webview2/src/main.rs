@@ -113,6 +113,10 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
         let mut cleaner = ammonia::Builder::default();
         cleaner
             .rm_tags(&["img", "form", "input", "button", "svg", "video", "audio"])
+            // Ammonia's defaults prioritize ordinary rich text, not complex
+            // email grids. Explicitly retain safe structural table elements.
+            .add_tags(&["table", "thead", "tbody", "tfoot", "tr", "td", "th",
+                "colgroup", "col", "caption"])
             .add_generic_attributes(&[
                 "style", "class", "width", "height", "align", "valign",
                 "bgcolor", "cellpadding", "cellspacing", "border",
@@ -408,6 +412,23 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn preserves_nested_table_geometry_and_styles() {
+            let html = r#"<style>.xl7 { background:#ccffcc; border:1px solid black }</style>
+                <table width="853" cellspacing="0" style="border-collapse:collapse">
+                <colgroup><col width="47"><col width="88"></colgroup>
+                <thead><tr><th class="xl7">Name</th><th>Value</th></tr></thead>
+                <tbody><tr><td colspan="2" rowspan="2" style="border:1px solid black">Merged</td></tr>
+                <tr></tr></tbody></table>"#;
+            let safe = safe_fragment(html);
+            for tag in ["<table", "<colgroup", "<col", "<thead", "<tbody", "<tr", "<th", "<td"] {
+                assert!(safe.contains(tag), "Lost {tag}: {safe}");
+            }
+            assert!(safe.contains("colspan=\"2\""), "Lost colspan: {safe}");
+            assert!(safe.contains("rowspan=\"2\""), "Lost rowspan: {safe}");
+            assert!(safe.contains("border-collapse"), "Lost inline border-collapse: {safe}");
+        }
 
         #[test]
         fn strips_active_content_and_preserves_table_spans() {
