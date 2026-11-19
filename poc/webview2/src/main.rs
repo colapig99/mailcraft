@@ -460,6 +460,43 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
     mod tests {
         use super::*;
 
+        /// Word 12 lottery email uses the shorthand "border:solid
+        /// windowtext 1.0pt", unlike Excel's "windowtext .5pt solid".
+        /// Keep sender-defined unbordered spacer cells genuinely unbordered.
+        #[test]
+        fn lottery_word_border_shorthands_and_spacers_survive_sanitizer() {
+            let original = r#"<table style="width:352.7pt;margin-left:-.7pt;border-collapse:collapse"><tr>
+              <td style="width:60.3pt;border:solid windowtext 1.0pt;border-top:none;padding:0cm 5.4pt 0cm 5.4pt">PP+Carry</td>
+              <td style="width:99.7pt;border-top:none;border-bottom:solid windowtext 1.0pt;border-right:solid windowtext 1.0pt">13</td>
+              <td style="width:23.0pt;padding:0cm 5.4pt 0cm 5.4pt"></td>
+              <td style="width:53.0pt;border:solid windowtext 1.0pt;background:#FFFF99">1</td>
+              </tr></table>"#;
+            let filtered = safe_fragment(original);
+            assert!(filtered.contains("border-collapse:collapse"), "{filtered}");
+            assert!(filtered.contains("border:solid #000000 1.0pt"), "Word border shorthand lost: {filtered}");
+            assert!(filtered.contains("border-bottom:solid #000000 1.0pt"), "Word side border lost: {filtered}");
+            assert!(filtered.contains("background:#FFFF99") || filtered.contains("background:#ffff99"), "yellow background lost: {filtered}");
+        }
+
+        /// Excel 9 PCM uses a large .xl stylesheet and fixed table layout.
+        /// Preserving its selectors should not require turning off CSP.
+        #[test]
+        fn pcm_excel_css_classes_and_fixed_layout_survive() {
+            let html = r#"<style><!--
+                .xl25 { border:.5pt solid windowtext; background:#CCFFFF; white-space:nowrap }
+                .xl99 { border-left:none; border-top:none; text-align:center }
+                --></style>
+                <table style="border-collapse:collapse;table-layout:fixed;width:824pt">
+                 <tr><td class="xl25" colspan="2">85人</td><td class="xl99">15:30</td></tr></table>"#;
+            let css = safe_stylesheets(html);
+            let filtered = safe_fragment(html);
+            assert!(css.contains(".xl25"), "class selector stripped: {css}");
+            assert!(css.contains("border:.5pt solid #000000"), "Excel border CSS stripped: {css}");
+            assert!(css.contains("white-space:nowrap"), "Excel nowrap CSS stripped: {css}");
+            assert!(filtered.contains("table-layout:fixed"), "Excel fixed layout stripped: {filtered}");
+            assert!(filtered.contains("colspan=\\"2\\""), "merged cell stripped: {filtered}");
+        }
+
         #[test]
         fn converts_legacy_excel_windowtext_borders_without_stripping_table() {
             let src = r#"<table style="BORDER-COLLAPSE:collapse"><tr>
