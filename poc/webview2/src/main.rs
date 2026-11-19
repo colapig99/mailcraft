@@ -119,7 +119,15 @@ document.getElementById('refresh').addEventListener('click', () => window.ipc.po
         let border = regex::Regex::new(
             r"(?i)(border(?:-(?:left|right|top|bottom))?\s*:\s*)(#[0-9a-f]{6})\s+((?:\d+(?:\.\d+)?|\.\d+)(?:px|pt))\s+(solid|dotted|dashed|double)"
         ).expect("constant regex");
-        border.replace_all(&recolored, "${1}${3} ${4} ${2}").into_owned()
+        let reordered = border.replace_all(&recolored, "${1}${3} ${4} ${2}").into_owned();
+        // CSS property names are case-insensitive, but the sanitizer's
+        // allowlist matches lowercase names. Legacy Office uses uppercase
+        // declarations, which otherwise become style="" throughout tables.
+        let prop = regex::Regex::new(r"(?i)(^|[;{])(\\s*)([a-z][a-z0-9-]*)\\s*:")
+            .expect("constant regex");
+        prop.replace_all(&reordered, |caps: &regex::Captures<'_>| {
+            format!("{}{}{}:", &caps[1], &caps[2], caps[3].to_ascii_lowercase())
+        }).into_owned()
     }
 
     /// Normalize only quoted style attribute values. Do not alter visible
