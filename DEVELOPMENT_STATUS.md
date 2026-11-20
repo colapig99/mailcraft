@@ -42,3 +42,11 @@ P2. Plan production rendering integration only after POC passes visual+security 
 
 ## Handoff checklist
 At each significant test/commit: write actual branch + SHA, Action run + job conclusion, local Windows evidence, open defects, and next step into status/test docs. If interrupted, rebuild snapshot from GitHub rather than assuming the previous chat completed.
+
+## 2026-11-20 — Fast diagnostic iteration (after Build #46)
+
+- User requested fewer repetitive test rounds and a general HTML rendering approach rather than per-table CSS tweaks.
+- Source review verified existing POC `Export filtered HTML` always writes `views[3]`, regardless of selected display mode. For non-Excel mail `views[3] == views[4]` is an intended code invariant; main Filtered display mode 0 adds a source-toggle wrapper, so visible scroll/vertical positioning can differ from Office mode without a changed sanitized email document.
+- On `feature/html-webview2-poc`, commit `d4736377fde8a764e392fa46740db4e10f96010e` adds **Export both modes**: one explicit click writes a matched sanitized direct HTML and Office experimental HTML from the same EML, without overwrite. Adds test asserting Word/non-Excel input equality. Commit `98959c23864b4756d76e48f431e1b799a7d6a3b8` documents workflow/privacy.
+- Windows Actions runs #47 (code) and #48 (documentation branch head) were **in_progress when checked**, not yet verified passing. Full build/test result: 待核實. Official app not changed or integrated.
+- No additional CSS or renderer modifications made. Next user-visible test: after a green Windows build, launch POC once, select lottery #3 and PCM, click **Export both modes** once for each. Compare file hashes/structural differences before making any further rendering changes; never upload unredacted customer mail to GitHub.
