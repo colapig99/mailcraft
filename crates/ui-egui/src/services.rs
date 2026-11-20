@@ -119,6 +119,11 @@ pub trait Services {
     fn save_path(&mut self, suggested: &str) -> Option<PathBuf>;
     /// Open a file with the system's default app.
     fn open_path(&mut self, path: &std::path::Path) -> Result<(), String>;
+    /// Launch a separate, sandboxed WebView2 preview with an in-memory MIME message.
+    /// The platform is responsible for the child process and must not write raw mail to disk.
+    fn preview_webview2(&mut self, _raw_eml: &[u8]) -> Result<(), String> {
+        Err("WebView2 preview is unavailable on this platform/build".into())
+    }
     /// Where a build that updates itself is with the next version. The default: nowhere.
     fn update_state(&mut self) -> UpdateState {
         UpdateState::None
