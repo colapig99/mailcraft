@@ -207,3 +207,14 @@ Prefer a Windows child WebView2 owned by the host winit/eframe window, with
 a per-message renderer preference and a fall back to the unmodified egui
 renderer. Never create a WebView for every message row. Integrate only after
 this standalone POC passes actual screenshot comparison.
+
+## One-click paired HTML export (diagnostic)
+
+Click **Export both modes** for the currently selected EML. The POC writes two non-overwriting files next to the EXE:
+
+- `<EML>.compare-NN.direct-filtered.html`
+- `<EML>.compare-NN.office-experiment.html`
+
+These are the exact **sanitized direct documents** used as inputs for the V2 comparison (not the raw Office HTML); their POC shell wrappers are excluded. They are produced together from the same EML, avoiding mode/scroll-position mistakes. For non-Excel Word mail the documents are expected to match byte-for-byte, because the experimental Excel gate is not active. The normal **Filtered HTML** display (mode 0) adds a source-toggle wrapper, so it can show different vertical positioning without missing message body data. If the paired files match yet the window captures differ, investigate UI wrappers/scroll position rather than inventing more CSS rules.
+
+**Privacy:** each file contains real email content. This is a LOCAL export only; inspect/redact before sharing. The POC does not upload these files. The previous **Export filtered HTML** button remains unchanged.
