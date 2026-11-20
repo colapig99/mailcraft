@@ -128,6 +128,55 @@ impl Services for Desktop {
     fn open_path(&mut self, path: &Path) -> Result<(), String> {
         shell_open(path.as_os_str())
     }
+
+    fn preview_webview2(&mut self, raw_eml: &[u8]) -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            use std::io::Write as _;
+            use std::os::windows::process::CommandExt as _;
+            use std::process::{Command, Stdio};
+
+            // One-shot, bounded MIME handoff. No raw email, credentials or
+            // message identifiers are written to the filesystem or arguments.
+            const MAX_PREVIEW_EML: usize = 12 * 1024 * 1024;
+            if raw_eml.is_empty() || raw_eml.len() > MAX_PREVIEW_EML {
+                return Err("WebView2 preview only supports messages up to 12 MiB".into());
+            }
+            let executable = std::env::current_exe()
+                .map_err(|e| format!("Cannot locate MailCraft executable: {e}"))?
+                .with_file_name("mailcraft-webview2-poc.exe");
+            if !executable.is_file() {
+                return Err("WebView2 preview companion EXE is missing beside MailCraft".into());
+            }
+            let mut child = Command::new(&executable)
+                .arg("--stdin")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                // Don't flash an extra command window for the helper process.
+                .creation_flags(0x0800_0000)
+                .spawn()
+                .map_err(|e| format!("Cannot start WebView2 preview: {e}"))?;
+            let mut input = child.stdin.take().ok_or("WebView2 preview has no stdin pipe")?;
+            // The UI thread never waits for the WebView child or a pipe write.
+            let message = raw_eml.to_vec();
+            std::thread::Builder::new()
+                .name("mailcraft-webview2-bridge".into())
+                .spawn(move || {
+                    if let Err(e) = input.write_all(&message) {
+                        log::warn!("WebView2 preview pipe closed: {e}");
+                    }
+                    // Dropping input signals EOF to the read-only viewer.
+                })
+                .map_err(|e| format!("Cannot hand off WebView2 message: {e}"))?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = raw_eml;
+            Err("WebView2 preview is currently Windows-only".into())
+        }
+    }
     fn update_state(&mut self) -> mailcraft_ui_egui::UpdateState {
         self.updater.as_ref().map(self_update::Updater::state).unwrap_or_default()
     }
