@@ -33,3 +33,11 @@ Status: **feature branch only**, not merged to `main`, and not an embedded egui 
 - Replace process handoff with a Windows child-WebView lifetime managed by the native eframe/winit host and feed an approved sanitized in-memory HTML document.
 - Implement placement over an egui-allocated region, show/hide with selection, resize/DPI/focus sync, CID content controls, explicit link/print handling, and precise security tests.
 - Keep egui as a per-message fallback, avoid creating a WebView per row, and guard resource usage.
+
+## Build efficiency change
+
+At commit `e6626444e0c5aed3ab6ac852613d8311c6f73678`, the Windows integration workflow was split into **independent parallel jobs**:
+- `windows-exes`: build release MailCraft, test/compile sandboxed WebView2, and upload both EXEs side-by-side as one artifact.
+- `ui-regression`: execute egui UI tests separately.
+
+This avoids waiting for the full UI regression job before an EXE artifact can be produced. **Do not call the artifact stable unless both jobs pass and Windows manual integration tests have been recorded.** Build #1 used the old sequential workflow; #2 is the first parallel version. Both still require successful runner execution; no artifact is assumed until actually observed.
