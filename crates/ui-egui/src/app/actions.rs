@@ -381,6 +381,16 @@ impl MailApp {
                     Err(e) => self.session.notice(e.to_string(), true),
                 }
             }
+            Action::PreviewWebView2 => {
+                match self.session.message_source() {
+                    Ok(raw) => {
+                        if let Err(error) = self.services.preview_webview2(&raw) {
+                            self.session.notice(error, true);
+                        }
+                    }
+                    Err(error) => self.session.notice(error.to_string(), true),
+                }
+            }
             Action::SaveMessage if self.services.downloads() => {
                 let name = format!("{}.eml", self.message_file_name());
                 match self.session.message_source() {
