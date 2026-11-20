@@ -83,7 +83,7 @@ mod windows {
         command.strip_prefix("select:")?.parse::<usize>().ok().filter(|index| *index < count)
     }
 
-    fn shell_page(email_html: &str, files: &[PathBuf], selected: usize, mode: usize) -> Result<String, String> {
+    fn shell_page(email_html: &str, files: &[PathBuf], selected: usize, mode: usize, live: bool) -> Result<String, String> {
         // A tiny trusted UI script runs in the parent. Email HTML is placed in
         // a sandboxed srcdoc frame without allow-scripts or allow-same-origin.
         // No email markup can invoke the privileged Wry IPC bridge.
@@ -92,13 +92,16 @@ mod windows {
         let modes = ["Filtered HTML", "Filtered HTML source", "Original Office HTML (diagnostic)", "Direct filtered document (experimental)", "Office compatibility (experimental)", "Layout diagnostics (filtered)", "Layout Diagnostic V2 (compare)"];
         let modes = modes.iter().enumerate().map(|(i, label)| {
             let chosen = if i == mode { " selected" } else { "" };
-            format!("<option value=\"{i}\"{chosen}>{label}</option>")
+            let disabled = if live && !mode_allowed(i, true) { " disabled" } else { "" };
+            format!("<option value=\"{i}\"{chosen}{disabled}>{label}</option>")
         }).collect::<String>();
         // Only sanitized HTML may be inspected. Without allow-scripts, email
         // markup remains inert. allow-same-origin permits only the trusted
         // parent diagnostic script to read computed DOM geometry.
         let frame_sandbox = if mode == 5 || mode == 6 { "allow-same-origin" } else { "" };
         let diagnostics = if mode == 5 { layout_diagnostic_script() } else if mode == 6 { layout_comparison_script() } else { "" };
+        let export_controls = if live { "" } else { "<button type=\"button\" id=\"refresh\">Refresh list</button><button type=\"button\" id=\"export\">Export filtered HTML</button><button type=\"button\" id=\"export-pair\">Export both modes</button>" };
+        let file_note = if live { "In-memory MailCraft preview — no file exports" } else { "files — local EML only" };
         let shell = format!(r#"<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-mailcraft-local-ui'; style-src 'unsafe-inline'; frame-src 'self' about:; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <style>html,body{{margin:0;height:100%;overflow:hidden;font:13px Segoe UI,sans-serif;background:#fff}}
@@ -107,9 +110,8 @@ select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 
 <body><div id="layout"><header><strong>MailCraft WebView2 POC</strong>
 <label for="emails">EML file:</label><select id="emails" aria-label="Select email">{options}</select>
 <label for="display">Display:</label><select id="display" aria-label="HTML display mode">{modes}</select>
-<button type="button" id="refresh">Refresh list</button>
-<button type="button" id="export">Export filtered HTML</button><button type="button" id="export-pair">Export both modes</button>
-<span>{} files — local EML only</span><span id="layout-status" role="status"></span><button type="button" id="layout-save" hidden>Save layout report</button></header>
+{export_controls}
+<span>{} {file_note}</span><span id="layout-status" role="status"></span><button type="button" id="layout-save" hidden>Save layout report</button></header>
 <iframe id="mail-frame" title="Isolated email preview" sandbox="{frame_sandbox}" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
 <script nonce="mailcraft-local-ui">
 document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
@@ -303,8 +305,8 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 "#
     }
 
-    fn comparison_shell(files: &[PathBuf], selected: usize, direct: &str, office: &str) -> Result<String, String> {
-        let mut page=shell_page(direct,files,selected,6)?;
+    fn comparison_shell(files: &[PathBuf], selected: usize, direct: &str, office: &str, live: bool) -> Result<String, String> {
+        let mut page=shell_page(direct,files,selected,6,live)?;
         let second = format!(
             "<iframe id=\"comparison-frame\" title=\"Sanitized Office experimental comparison\" sandbox=\"allow-same-origin\" referrerpolicy=\"no-referrer\" style=\"position:fixed;left:-10000px;top:0;visibility:hidden;width:100%;height:500px\" srcdoc=\"{}\"></iframe>",
             escape_attribute(office)
@@ -546,13 +548,20 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
     /// One source of truth for the active mode, whether switching modes or
     /// changing the selected EML. Never silently reset to Filtered HTML.
+    fn mode_allowed(mode: usize, live: bool) -> bool {
+        mode <= 6 && (!live || matches!(mode, 0 | 1 | 3 | 4))
+    }
+
     fn document_for_mode(
-        views: &[String; 5], files: &[PathBuf], selected: usize, mode: usize
+        views: &[String; 5], files: &[PathBuf], selected: usize, mode: usize, live: bool
     ) -> Result<String, String> {
+        if !mode_allowed(mode, live) {
+            return Err("Display mode unavailable for in-memory MailCraft preview".into());
+        }
         if mode == 6 {
-            comparison_shell(files, selected, &views[3], &views[4])
+            comparison_shell(files, selected, &views[3], &views[4], live)
         } else if mode <= 5 {
-            shell_page(&views[if mode == 5 { 3 } else { mode }], files, selected, mode)
+            shell_page(&views[if mode == 5 { 3 } else { mode }], files, selected, mode, live)
         } else {
             Err("Invalid WebView2 display mode".into())
         }
@@ -570,11 +579,13 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         selected: usize,
         proxy: EventLoopProxy<ViewerEvent>,
         approved_base64: Arc<Mutex<[String; 2]>>,
+        /// The original MIME arrived from MailCraft through stdin, not from disk.
+        live: bool,
     }
 
     impl Viewer {
         fn selected_document(&self) -> Result<String, String> {
-            document_for_mode(&self.views, &self.files, self.selected, self.mode)
+            document_for_mode(&self.views, &self.files, self.selected, self.mode, self.live)
         }
 
         fn show_selected(&mut self) {
@@ -583,7 +594,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 let data = fs::read(path).map_err(|e| format!("Unable to read selected EML: {e}"))?;
                 if data.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
                 let views = pages(&data)?;
-                let html = document_for_mode(&views, &self.files, self.selected, self.mode)?;
+                let html = document_for_mode(&views, &self.files, self.selected, self.mode, self.live)?;
                 Ok::<_, String>((views, html))
             })();
             match result {
@@ -690,7 +701,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
         fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ViewerEvent) {
             match event {
-                ViewerEvent::Mode(mode) if mode <= 6 => {
+                ViewerEvent::Mode(mode) if mode_allowed(mode, self.live) => {
                     self.mode = mode;
                     if let Ok(html) = self.selected_document() {
                         if let Ok(mut approved) = self.approved_base64.lock() {
@@ -703,7 +714,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         }
                     }
                 }
-                ViewerEvent::Select(index) if index < self.files.len() => {
+                ViewerEvent::Select(index) if !self.live && index < self.files.len() => {
                     if self.selected != index { self.selected = index; self.show_selected(); }
                 }
                 ViewerEvent::LayoutReport(json) => {
@@ -742,7 +753,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         if !exported { eprintln!("No layout report created"); }
                     }
                 }
-                ViewerEvent::ExportPair => {
+                ViewerEvent::ExportPair if !self.live => {
                     // Only sanitized documents, never the original Office HTML.
                     // Write a matched pair from the same parsed EML; do not overwrite.
                     if let Some(file) = self.files.get(self.selected) {
@@ -786,7 +797,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         if !saved { eprintln!("No paired comparison HTML created"); }
                     }
                 }
-                ViewerEvent::ExportFiltered => {
+                ViewerEvent::ExportFiltered if !self.live => {
                     // Explicit local diagnostic export. It writes only the
                     // already sanitized, script-disabled HTML document and
                     // never the raw untrusted EML or remote content.
@@ -805,7 +816,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         }
                     }
                 }
-                ViewerEvent::Refresh => {
+                ViewerEvent::Refresh if !self.live => {
                     match eml_files(&self.directory) {
                         Ok(files) => {
                             let old_path = self.files.get(self.selected).cloned();
@@ -839,7 +850,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         PhysicalKey::Code(KeyCode::Escape) => event_loop.exit(),
                         PhysicalKey::Code(KeyCode::F1) | PhysicalKey::Code(KeyCode::F2) | PhysicalKey::Code(KeyCode::F3) => {
                             let next = match event.physical_key { PhysicalKey::Code(KeyCode::F1) => 0, PhysicalKey::Code(KeyCode::F2) => 1, _ => 2 };
-                            if next != self.mode {
+                            if next != self.mode && mode_allowed(next, self.live) {
                                 self.mode = next;
                                 if let Some(webview) = self.webview.as_ref() {
                                     if let Ok(html) = self.selected_document() {
@@ -864,25 +875,39 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
     pub(super) fn run() -> Result<(), String> {
         let executable = std::env::current_exe().map_err(|e| format!("Cannot locate EXE: {e}"))?;
         let directory = executable.parent().ok_or("Cannot locate EXE directory")?.to_path_buf();
-        let files = eml_files(&directory)?;
-        if files.is_empty() {
-            return Err(format!("No .eml files in EXE folder: {}", directory.display()));
-        }
-        let requested = std::env::args_os().nth(1).map(PathBuf::from);
-        let selected = requested.as_ref().and_then(|p| {
-            let filename = p.file_name()?;
-            files.iter().position(|candidate| candidate.file_name() == Some(filename))
-        }).unwrap_or(0);
-        let raw = fs::read(&files[selected]).map_err(|e| format!("Cannot read EML: {e}"))?;
-        if raw.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
+        let requested = std::env::args_os().nth(1);
+        let live = requested.as_ref().is_some_and(|a| a.to_string_lossy() == "--stdin");
+        let (files, selected, raw) = if live {
+            // A private, bounded, one-shot pipe from the desktop app. No EML
+            // is ever written to disk by the handoff, and normal file browsing
+            // or raw-Office diagnostic modes are disabled for this viewer.
+            use std::io::Read as _;
+            let mut raw = Vec::new();
+            std::io::stdin().take(MAX_EML_BYTES + 1).read_to_end(&mut raw)
+                .map_err(|e| format!("Cannot read bounded MailCraft input: {e}"))?;
+            if raw.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
+            (vec![directory.join("MailCraft-current-message.eml")], 0, raw)
+        } else {
+            let files = eml_files(&directory)?;
+            if files.is_empty() {
+                return Err(format!("No .eml files in EXE folder: {}", directory.display()));
+            }
+            let selected = requested.as_ref().map(PathBuf::from).as_ref().and_then(|p| {
+                let filename = p.file_name()?;
+                files.iter().position(|candidate| candidate.file_name() == Some(filename))
+            }).unwrap_or(0);
+            let raw = fs::read(&files[selected]).map_err(|e| format!("Cannot read EML: {e}"))?;
+            if raw.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
+            (files, selected, raw)
+        };
         let views = pages(&raw)?;
         let event_loop = EventLoop::<ViewerEvent>::with_user_event().build()
             .map_err(|e| format!("Window event loop failed: {e}"))?;
         let proxy = event_loop.create_proxy();
-        eprintln!("Loaded {} EML files from {}", files.len(), directory.display());
+        eprintln!("WebView2 preview initialized: in_memory={live}, file_count={}", files.len());
         event_loop.run_app(&mut Viewer {
             window: None, webview: None, views, mode: 0, directory, files,
-            selected, proxy, approved_base64: Arc::new(Mutex::new([String::new(), String::new()])),
+            selected, proxy, approved_base64: Arc::new(Mutex::new([String::new(), String::new()])), live,
         }).map_err(|e| format!("WebView2 event loop failed: {e}"))
     }
 
@@ -929,22 +954,22 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 "<p>raw B</p>".into(), "<p>direct B</p>".into(),
                 "<p>office B</p>".into()
             ];
-            let before = document_for_mode(&views_a, &files, 0, 4).unwrap();
-            let after = document_for_mode(&views_b, &files, 1, 4).unwrap();
+            let before = document_for_mode(&views_a, &files, 0, 4, false).unwrap();
+            let after = document_for_mode(&views_b, &files, 1, 4, false).unwrap();
             assert!(before.contains("office A"));
             assert!(after.contains("office B"));
             assert!(!after.contains("default B"));
             assert!(after.contains(r#"<option value="4" selected>Office compatibility (experimental)</option>"#));
-            let compare = document_for_mode(&views_b, &files, 1, 6).unwrap();
+            let compare = document_for_mode(&views_b, &files, 1, 6, false).unwrap();
             assert!(compare.contains("mailcraft-layout-v2"));
             assert!(compare.contains(r#"<option value="6" selected>Layout Diagnostic V2 (compare)</option>"#));
-            assert!(document_for_mode(&views_b, &files, 1, 7).is_err());
+            assert!(document_for_mode(&views_b, &files, 1, 7, false).is_err());
         }
 
         #[test]
         fn v2_comparison_uses_only_sanitized_inputs_and_no_mail_scripts() {
             let files=vec![PathBuf::from("comparison.eml")];
-            let doc = comparison_shell(&files,0,"<p>Filtered</p>","<p>Office</p>").unwrap();
+            let doc = comparison_shell(&files,0,"<p>Filtered</p>","<p>Office</p>", false).unwrap();
             assert!(doc.contains("mail-frame"));
             assert!(doc.contains("comparison-frame"));
             assert!(doc.contains("mailcraft-layout-v2"));
@@ -958,8 +983,8 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         #[test]
         fn layout_diagnostics_only_on_explicit_sanitized_mode() {
             let files = vec![PathBuf::from("sample.eml")];
-            let default = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 0).unwrap();
-            let diag = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 5).unwrap();
+            let default = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 0, false).unwrap();
+            let diag = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 5, false).unwrap();
             assert!(default.contains(r#"sandbox="""#), "{default}");
             assert!(!default.contains("layout-report:"));
             assert!(diag.contains(r#"sandbox="allow-same-origin""#), "{diag}");
@@ -1024,7 +1049,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
             assert!(!pages[3].contains("class='rendered'"));
             assert!(pages[3].contains("default-src 'none'"));
             let names = vec![PathBuf::from("sample.eml")];
-            let shell = shell_page(&pages[3], &names, 0, 3).unwrap();
+            let shell = shell_page(&pages[3], &names, 0, 3, false).unwrap();
             assert!(shell.contains(r#"<option value="3" selected>Direct filtered document (experimental)</option>"#));
             assert!(shell.contains(r#"sandbox="""#));
         }
@@ -1032,7 +1057,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         #[test]
         fn pair_export_is_explicit_and_never_exposes_raw_office_html() {
             let file = vec![PathBuf::from("lottery.eml")];
-            let shell = shell_page("<p>safe</p>", &file, 0, 0).unwrap();
+            let shell = shell_page("<p>safe</p>", &file, 0, 0, false).unwrap();
             assert!(shell.contains("Export both modes"));
             assert!(shell.contains("window.ipc.postMessage('export-pair')"));
             assert!(shell.contains(r#"sandbox="""#));
@@ -1045,7 +1070,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         #[test]
         fn export_filtered_html_is_explicit_and_never_auto_sends_content() {
             let file = vec![PathBuf::from("PCM.eml")];
-            let shell = shell_page("<p>test</p>", &file, 0, 0).unwrap();
+            let shell = shell_page("<p>test</p>", &file, 0, 0, false).unwrap();
             assert!(shell.contains("Export filtered HTML"));
             assert!(shell.contains("window.ipc.postMessage('export-filtered')"));
             assert!(shell.contains(r#"sandbox="""#));
@@ -1056,8 +1081,8 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         fn original_office_diagnostic_is_explicit_and_sandboxed() {
             let names = vec![PathBuf::from("sample.eml")];
             let original = r#"<style>.xl1{border:1px solid black}</style><table><tr><td>test</td></tr></table>"#;
-            let filtered = shell_page("<p>filtered</p>", &names, 0, 0).unwrap();
-            let raw = shell_page(original, &names, 0, 2).unwrap();
+            let filtered = shell_page("<p>filtered</p>", &names, 0, 0, false).unwrap();
+            let raw = shell_page(original, &names, 0, 2, false).unwrap();
             assert!(filtered.contains(r#"<option value="0" selected>Filtered HTML</option>"#));
             assert!(raw.contains(r#"<option value="2" selected>Original Office HTML (diagnostic)</option>"#));
             assert!(raw.contains(r#"sandbox="""#), "{raw}");
@@ -1155,12 +1180,29 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         #[test]
         fn html_file_selector_is_sandboxed_and_escapes_names() {
             let f = vec![PathBuf::from("A & \"B\".eml"), PathBuf::from(r#"C:\mailtests\second.eml"#)];
-            let html = shell_page("<html><body>Test</body></html>", &f, 1, 0).unwrap();
+            let html = shell_page("<html><body>Test</body></html>", &f, 1, 0, false).unwrap();
             assert!(html.contains("sandbox=\"\""));
             assert!(html.contains("A &amp; &quot;B&quot;.eml"));
             assert!(html.contains("<option value=\"1\" selected>second.eml</option>"));
             assert!(html.contains("window.ipc.postMessage"));
             assert!(!html.contains("file:///"));
+        }
+
+        #[test]
+        fn in_memory_preview_hides_raw_mode_and_exports() {
+            let files = vec![PathBuf::from("MailCraft-current-message.eml")];
+            let safe = shell_page("<p>test</p>", &files, 0, 0, true).unwrap();
+            assert!(safe.contains("In-memory MailCraft preview"));
+            assert!(safe.contains(r#"<option value="2" disabled>"#), "{safe}");
+            assert!(safe.contains(r#"<option value="6" disabled>"#), "{safe}");
+            assert!(!safe.contains(r#"id="export-pair""#));
+            assert!(!safe.contains(r#"id="export""#));
+            assert!(!safe.contains(r#"id="refresh""#));
+            assert!(!mode_allowed(2, true));
+            assert!(!mode_allowed(5, true));
+            assert!(!mode_allowed(6, true));
+            assert!(mode_allowed(4, true));
+            assert!(mode_allowed(2, false));
         }
 
         #[test]
