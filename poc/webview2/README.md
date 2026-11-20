@@ -16,6 +16,23 @@ cargo build --manifest-path poc/webview2/Cargo.toml --release
 .\poc\webview2\target\release\mailcraft-webview2-poc.exe "C:\mail-tests\sample.eml"
 ```
 
+## Excel-only experiment safeguard
+
+After controlled Windows screenshots confirmed that Office mode fixes the PCM
+numeric-cell overlap but shrinks the font in the Word-generated lottery email,
+the experimental Office rendering path is now **restricted to HTML that has
+both numeric Excel `x:num` table cells and `mso-spacerun` markers**.
+Such mail retains the previously tested Excel spacer/font treatment. Every
+other EML (Word, Veeam, generic HTML, including the lottery) receives the
+same sanitized document as **Direct filtered document** in Office mode.
+No borders or widths are modified for those non-Excel messages. The standard
+**Filtered HTML** path is unchanged for every message.
+
+This is a conservative *opt-in* classification, not a promise of full
+Excel/Word compatibility. If an Excel email lacks either marker, it remains
+on the unchanged sanitized path. Synthetic regression fixtures verify both
+sides; visually compare PCM and the lottery again on Windows.
+
 ## Reliable comparison procedure
 
 Switching the EML dropdown now **preserves the selected Display mode**.
