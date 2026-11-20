@@ -16,3 +16,4 @@ mail-parser = { version = "1.0.1", features = ["full_encoding"] }
 ammonia = "=4.2.5"
 regex = "1"
 base64 = "=0.22.1"
+serde_json = "1"
