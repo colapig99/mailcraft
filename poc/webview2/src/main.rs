@@ -108,13 +108,14 @@ select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 
 <label for="emails">EML file:</label><select id="emails" aria-label="Select email">{options}</select>
 <label for="display">Display:</label><select id="display" aria-label="HTML display mode">{modes}</select>
 <button type="button" id="refresh">Refresh list</button>
-<button type="button" id="export">Export filtered HTML</button>
+<button type="button" id="export">Export filtered HTML</button><button type="button" id="export-pair">Export both modes</button>
 <span>{} files — local EML only</span><span id="layout-status" role="status"></span><button type="button" id="layout-save" hidden>Save layout report</button></header>
 <iframe id="mail-frame" title="Isolated email preview" sandbox="{frame_sandbox}" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
 <script nonce="mailcraft-local-ui">
 document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
 document.getElementById('refresh').addEventListener('click', () => window.ipc.postMessage('refresh'));
 document.getElementById('export').addEventListener('click', () => window.ipc.postMessage('export-filtered'));
+document.getElementById('export-pair').addEventListener('click', () => window.ipc.postMessage('export-pair'));
 document.getElementById('display').addEventListener('change', e => window.ipc.postMessage('mode:' + e.target.value));
 {diagnostics}
 </script></body></html>"#, files.len());
@@ -557,7 +558,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         }
     }
 
-    enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered, LayoutReport(String) }
+    enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered, ExportPair, LayoutReport(String) }
 
     struct Viewer {
         window: Option<Window>,
@@ -644,6 +645,8 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         let _ = proxy.send_event(ViewerEvent::Refresh);
                     } else if body == "export-filtered" {
                         let _ = proxy.send_event(ViewerEvent::ExportFiltered);
+                    } else if body == "export-pair" {
+                        let _ = proxy.send_event(ViewerEvent::ExportPair);
                     } else if let Some(json) = body.strip_prefix("layout-report:") {
                         if json.len() <= MAX_LAYOUT_REPORT_BYTES {
                             let _ = proxy.send_event(ViewerEvent::LayoutReport(json.to_string()));
@@ -737,6 +740,50 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                             }
                         }
                         if !exported { eprintln!("No layout report created"); }
+                    }
+                }
+                ViewerEvent::ExportPair => {
+                    // Only sanitized documents, never the original Office HTML.
+                    // Write a matched pair from the same parsed EML; do not overwrite.
+                    if let Some(file) = self.files.get(self.selected) {
+                        let name = file.file_name().unwrap_or_default().to_string_lossy();
+                        let same = self.views[3] == self.views[4];
+                        let mut saved = false;
+                        for number in 1..=99 {
+                            let one = self.directory.join(format!("{name}.compare-{number:02}.direct-filtered.html"));
+                            let two = self.directory.join(format!("{name}.compare-{number:02}.office-experiment.html"));
+                            if one.exists() || two.exists() { continue; }
+                            match fs::OpenOptions::new().write(true).create_new(true).open(&one) {
+                                Ok(mut first) => {
+                                    use std::io::Write;
+                                    if let Err(e) = first.write_all(self.views[3].as_bytes()) {
+                                        eprintln!("Paired export failed writing first document: {e}");
+                                        let _ = fs::remove_file(&one);
+                                        break;
+                                    }
+                                    match fs::OpenOptions::new().write(true).create_new(true).open(&two) {
+                                        Ok(mut second) => {
+                                            if let Err(e) = second.write_all(self.views[4].as_bytes()) {
+                                                eprintln!("Paired export failed writing second document: {e}");
+                                                let _ = fs::remove_file(&one);
+                                                let _ = fs::remove_file(&two);
+                                                break;
+                                            }
+                                            eprintln!("Comparison HTML saved: {} and {} (documents identical={same})", one.display(), two.display());
+                                            saved = true;
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Paired export failed creating second document: {e}");
+                                            let _ = fs::remove_file(&one);
+                                        }
+                                    }
+                                    break;
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                                Err(e) => { eprintln!("Paired export failed: {e}"); break; }
+                            }
+                        }
+                        if !saved { eprintln!("No paired comparison HTML created"); }
                     }
                 }
                 ViewerEvent::ExportFiltered => {
@@ -980,6 +1027,19 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
             let shell = shell_page(&pages[3], &names, 0, 3).unwrap();
             assert!(shell.contains(r#"<option value="3" selected>Direct filtered document (experimental)</option>"#));
             assert!(shell.contains(r#"sandbox="""#));
+        }
+
+        #[test]
+        fn pair_export_is_explicit_and_never_exposes_raw_office_html() {
+            let file = vec![PathBuf::from("lottery.eml")];
+            let shell = shell_page("<p>safe</p>", &file, 0, 0).unwrap();
+            assert!(shell.contains("Export both modes"));
+            assert!(shell.contains("window.ipc.postMessage('export-pair')"));
+            assert!(shell.contains(r#"sandbox="""#));
+            let raw = b"From: a@example.com\r\nTo: b@example.com\r\nSubject: x\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html><body><table class='MsoNormalTable'><tr><td>8</td></tr></table></body></html>";
+            let variants = pages(raw).unwrap();
+            assert_eq!(variants[3], variants[4]);
+            assert_ne!(variants[0], variants[3]);
         }
 
         #[test]
