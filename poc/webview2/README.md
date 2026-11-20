@@ -79,7 +79,7 @@ Chromium compatibility with Word/Excel HTML and source markup.
 
 ## Office compatibility opt-in experiment
 
-**Display → Office compatibility (experimental)** keeps safe Excel
+**Display → Office compatibility (experimental)** removes leading spacer-only `mso-spacerun:yes` runs from explicitly numeric Excel cells (`x:num`) to avoid overflow into adjacent columns. It does not modify ordinary text cells, table widths, or the default display mode. It also keeps safe Excel
 `<font>` runs during sanitization and reconciles only Word-labelled
 `MsoNormalTable` width attributes when the HTML pixel width is more
 than 10% larger than the CSS point-based width. It does not synthesize
