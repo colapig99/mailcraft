@@ -16,6 +16,21 @@ cargo build --manifest-path poc/webview2/Cargo.toml --release
 .\poc\webview2\target\release\mailcraft-webview2-poc.exe "C:\mail-tests\sample.eml"
 ```
 
+## Reliable comparison procedure
+
+Switching the EML dropdown now **preserves the selected Display mode**.
+Earlier POC builds silently returned to the default **Filtered HTML** when
+selecting another email, which could invalidate an Office-compatibility
+comparison. The terminal also logs the current numeric mode when an EML
+changes; the dropdown visually shows which mode remains active.
+
+For a reproducible PCM check, load the same EML in **Filtered HTML**, then
+in **Office compatibility (experimental)**, without changing window width
+or Windows zoom settings. V2 numeric overflow counts are useful diagnostics,
+but not a substitute for a pixel-level Outlook 2007 reference comparison.
+For lottery, inspect borders against the sender's original edge definitions
+before proposing any CSS changes.
+
 ## Choose an EML from the EXE folder
 
 Place your test `.eml` files in the same folder as
