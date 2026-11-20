@@ -158,6 +158,8 @@ pub enum Action {
     /// Save the open message as a PDF, or as its `.eml` source.
     ExportPdf,
     SaveMessage,
+    /// Windows-only experimental WebView2 preview. Original mail stays in memory.
+    PreviewWebView2,
     /// Open an attachment in a Craft app (its command name).
     OpenInCraft(usize, &'static str),
     /// Save every attachment of the open message into a folder.
