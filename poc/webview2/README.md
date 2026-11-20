@@ -117,6 +117,29 @@ If possible also compare against browser devtools on the original EML.
 The report describes the actual **sanitized** layout only, not a browser
 measurement of the raw EML, so it cannot by itself prove why results diverge.
 
+## V2 comparison (opt-in)
+
+Choose **Display → Layout Diagnostic V2 (compare)**. This keeps the same
+EML, WebView2 engine, and measured viewport size while comparing **two
+sanitized** variants: standard direct filtered HTML and experimental Office
+compatibility HTML. The first is visible and the second lives in a separate
+offscreen iframe with the same measured width. Both disable email scripts,
+external resources, forms and navigation. Neither modifies the default
+renderer or the normal sanitized email view.
+
+Click **Save comparison** and a new `<EML>.layout-NN.json` appears beside
+the EXE, without overwriting earlier reports. The JSON contains per-table
+sizes, per-cell coordinates, computed CSS, text range overflow flags and
+a list of differing cells; it contains no mail body text or raw HTML, though
+layout metadata can still be sensitive.
+
+**Limits:** This V2 report isolates differences between two sanitized
+rendering paths, not a complete raw-vs-sanitized provenance proof. Original
+Office HTML remains visual-only in the separate diagnostic mode because
+granting DOM access to unsanitized email content would weaken isolation.
+If both V2 variants produce the same defect, the next investigation
+is exact sanitized HTML versus source DOM/CSS, not another blind CSS patch.
+
 ## Manual regression matrix (do not commit real customer EMLs)
 
 1. PCM overtime: yellow merged headers, blue headcount cells, historical months.
