@@ -115,9 +115,9 @@ select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 
 <iframe id="mail-frame" title="Isolated email preview" sandbox="{frame_sandbox}" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
 <script nonce="mailcraft-local-ui">
 document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
-document.getElementById('refresh').addEventListener('click', () => window.ipc.postMessage('refresh'));
-document.getElementById('export').addEventListener('click', () => window.ipc.postMessage('export-filtered'));
-document.getElementById('export-pair').addEventListener('click', () => window.ipc.postMessage('export-pair'));
+document.getElementById('refresh')?.addEventListener('click', () => window.ipc.postMessage('refresh'));
+document.getElementById('export')?.addEventListener('click', () => window.ipc.postMessage('export-filtered'));
+document.getElementById('export-pair')?.addEventListener('click', () => window.ipc.postMessage('export-pair'));
 document.getElementById('display').addEventListener('change', e => window.ipc.postMessage('mode:' + e.target.value));
 {diagnostics}
 </script></body></html>"#, files.len());
