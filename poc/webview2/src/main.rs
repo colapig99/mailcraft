@@ -89,7 +89,7 @@ mod windows {
         // No email markup can invoke the privileged Wry IPC bridge.
         let options = option_list(files, selected);
         let frame = escape_attribute(email_html);
-        let modes = ["Filtered HTML", "Filtered HTML source", "Original Office HTML (diagnostic)", "Direct filtered document (experimental)", "Office compatibility (experimental)", "Layout diagnostics (filtered)"];
+        let modes = ["Filtered HTML", "Filtered HTML source", "Original Office HTML (diagnostic)", "Direct filtered document (experimental)", "Office compatibility (experimental)", "Layout diagnostics (filtered)", "Layout Diagnostic V2 (compare)"];
         let modes = modes.iter().enumerate().map(|(i, label)| {
             let chosen = if i == mode { " selected" } else { "" };
             format!("<option value=\"{i}\"{chosen}>{label}</option>")
@@ -97,8 +97,8 @@ mod windows {
         // Only sanitized HTML may be inspected. Without allow-scripts, email
         // markup remains inert. allow-same-origin permits only the trusted
         // parent diagnostic script to read computed DOM geometry.
-        let frame_sandbox = if mode == 5 { "allow-same-origin" } else { "" };
-        let diagnostics = if mode == 5 { layout_diagnostic_script() } else { "" };
+        let frame_sandbox = if mode == 5 || mode == 6 { "allow-same-origin" } else { "" };
+        let diagnostics = if mode == 5 { layout_diagnostic_script() } else if mode == 6 { layout_comparison_script() } else { "" };
         let shell = format!(r#"<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-mailcraft-local-ui'; style-src 'unsafe-inline'; frame-src 'self' about:; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <style>html,body{{margin:0;height:100%;overflow:hidden;font:13px Segoe UI,sans-serif;background:#fff}}
@@ -199,6 +199,118 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
   });
 })();
 "#
+    }
+
+    /// V2: compare two *sanitized* DOMs using identical iframe client widths.
+    /// No email scripts or content extraction, no network, no live CSS changes.
+    /// The second iframe is created by comparison_shell() with fixed bounds.
+    fn layout_comparison_script() -> &'static str {
+        r#"
+(() => {
+  const a = document.getElementById('mail-frame');
+  const b = document.getElementById('comparison-frame');
+  const status = document.getElementById('layout-status');
+  const save = document.getElementById('layout-save');
+  let latest = null;
+  const round = v => Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
+  const rectangle = element => {
+    const r = element.getBoundingClientRect();
+    return {x:round(r.x),y:round(r.y),width:round(r.width),height:round(r.height)};
+  };
+  const record = frame => {
+    const doc = frame.contentDocument;
+    if (!doc || !doc.body) throw Error('Sanitized iframe inaccessible');
+    let count=0, truncated=false;
+    const tables=Array.from(doc.querySelectorAll('table')).slice(0,30).map((table,ti) => {
+      const ts=doc.defaultView.getComputedStyle(table);
+      const rows=Array.from(table.rows).slice(0,120).map((row,ri) => {
+        const cells=Array.from(row.cells).map((cell,ci) => {
+          if (count>=1200) {truncated=true; return null;} count++;
+          const style=doc.defaultView.getComputedStyle(cell);
+          const range=doc.createRange(); range.selectNodeContents(cell);
+          const fragments=Array.from(range.getClientRects()).slice(0,60);
+          const minX=fragments.length?Math.min(...fragments.map(x=>x.x)):null;
+          const maxX=fragments.length?Math.max(...fragments.map(x=>x.right)):null;
+          const box=rectangle(cell);
+          const overlap = maxX!==null && maxX>box.x+box.width+2;
+          return {column:ci,rowSpan:cell.rowSpan,colSpan:cell.colSpan,box, 
+            measuredText:{x:round(minX),right:round(maxX),overflow:overlap},
+            scrollWidth:cell.scrollWidth,clientWidth:cell.clientWidth,
+            css:{fontFamily:style.fontFamily,fontSize:style.fontSize,
+              whiteSpace:style.whiteSpace,textAlign:style.textAlign, width:style.width,
+              paddingLeft:style.paddingLeft,paddingRight:style.paddingRight,
+              borderTop:style.borderTop,borderRight:style.borderRight,
+              borderBottom:style.borderBottom,borderLeft:style.borderLeft,
+              backgroundColor:style.backgroundColor}};
+        }).filter(Boolean);
+        return {row:ri,cells};
+      });
+      return {table:ti,box:rectangle(table),tableLayout:ts.tableLayout,rows};
+    });
+    return {viewport:{width:frame.clientWidth,height:frame.clientHeight},
+      tableCount:tables.length,cellCount:count,truncated,tables};
+  };
+  function comparison() {
+    try {
+      // Fix equal dimensions before measuring both documents.
+      b.style.width = a.clientWidth + 'px';
+      b.style.height = a.clientHeight + 'px';
+      const filtered=record(a);
+      const office=record(b);
+      const changes=[];
+      filtered.tables.forEach((table,ti) => {
+        const other=office.tables[ti];
+        if(!other) { changes.push({table:ti,kind:'table-missing'}); return; }
+        if(Math.abs(table.box.width-other.box.width)>1)
+          changes.push({table:ti,kind:'table-width',a:table.box.width,b:other.box.width});
+        table.rows.forEach((row,ri) => {
+          const otherRow=other.rows[ri]; if(!otherRow)return;
+          row.cells.forEach((cell,ci) => {
+            const c=otherRow.cells[ci]; if(!c)return;
+            const changedStyles=Object.keys(cell.css).filter(k=>cell.css[k]!==c.css[k]);
+            const dx=round(c.box.x-cell.box.x),dw=round(c.box.width-cell.box.width);
+            if(changedStyles.length || Math.abs(dx)>1 || Math.abs(dw)>1 ||
+                cell.measuredText.overflow!==c.measuredText.overflow) {
+              if(changes.length<500)changes.push({table:ti,row:ri,column:ci,dx,dWidth:dw,
+                styles:changedStyles,overflowA:cell.measuredText.overflow,
+                overflowB:c.measuredText.overflow});
+            }
+          });
+        });
+      });
+      latest={format:'mailcraft-layout-v2',stages:['sanitized-direct','sanitized-office-experiment'],
+        filtered,office,changeCount:changes.length,changes};
+      status.textContent='V2: '+filtered.cellCount+' cells, '+changes.length+' differences; click Save comparison';
+      save.hidden=false;save.textContent='Save comparison';
+    } catch (e) {
+      status.textContent='V2 failed: '+String(e);
+      save.hidden=true;
+    }
+  }
+  let ready=0;
+  function onload() {ready++; if(ready>=2) requestAnimationFrame(()=>requestAnimationFrame(comparison));}
+  a.addEventListener('load',onload);
+  b.addEventListener('load',onload);
+  save.addEventListener('click',()=>{
+    if(!latest)return;
+    const json=JSON.stringify(latest);
+    if(json.length>400000){status.textContent='V2 report too large';return;}
+    window.ipc.postMessage('layout-report:'+json);
+    status.textContent='V2 report requested; filename appears in PowerShell';
+  });
+})();
+"#
+    }
+
+    fn comparison_shell(files: &[PathBuf], selected: usize, direct: &str, office: &str) -> Result<String, String> {
+        let mut page=shell_page(direct,files,selected,6)?;
+        let second = format!(
+            "<iframe id=\"comparison-frame\" title=\"Sanitized Office experimental comparison\" sandbox=\"allow-same-origin\" referrerpolicy=\"no-referrer\" style=\"position:fixed;left:-10000px;top:0;visibility:hidden;width:100%;height:500px\" srcdoc=\"{}\"></iframe>",
+            escape_attribute(office)
+        );
+        page=page.replacen("</iframe></div>",&format!("</iframe>{second}</div>"),1);
+        if page.len()>2*1024*1024 { return Err("Comparison HTML exceeds WebView2 2 MiB limit".into()); }
+        Ok(page)
     }
 
     /// Legacy Excel and Outlook write border declarations in the order
@@ -427,7 +539,11 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
     impl Viewer {
         fn selected_document(&self) -> Result<String, String> {
-            shell_page(&self.views[if self.mode == 5 { 3 } else { self.mode }], &self.files, self.selected, self.mode)
+            if self.mode == 6 {
+                comparison_shell(&self.files, self.selected, &self.views[3], &self.views[4])
+            } else {
+                shell_page(&self.views[if self.mode == 5 { 3 } else { self.mode }], &self.files, self.selected, self.mode)
+            }
         }
 
         fn show_selected(&mut self) {
@@ -502,7 +618,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                             let _ = proxy.send_event(ViewerEvent::LayoutReport(json.to_string()));
                         }
                     } else if let Some(index) = body.strip_prefix("mode:").and_then(|v| v.parse::<usize>().ok()) {
-                        if index <= 5 { let _ = proxy.send_event(ViewerEvent::Mode(index)); }
+                        if index <= 6 { let _ = proxy.send_event(ViewerEvent::Mode(index)); }
                     } else if let Some(index) = body.strip_prefix("select:").and_then(|v| v.parse::<usize>().ok()) {
                         let _ = proxy.send_event(ViewerEvent::Select(index));
                     }
@@ -540,7 +656,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
         fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ViewerEvent) {
             match event {
-                ViewerEvent::Mode(mode) if mode <= 5 => {
+                ViewerEvent::Mode(mode) if mode <= 6 => {
                     self.mode = mode;
                     if let Ok(html) = self.selected_document() {
                         if let Ok(mut approved) = self.approved_base64.lock() {
@@ -559,12 +675,17 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 ViewerEvent::LayoutReport(json) => {
                     let verified = serde_json::from_str::<serde_json::Value>(&json)
                         .ok().filter(|value| {
-                            value.get("format").and_then(|s| s.as_str()) == Some("mailcraft-layout-v1")
+                            ((value.get("format").and_then(|s| s.as_str()) == Some("mailcraft-layout-v1")
                                 && value.get("mode").and_then(|s| s.as_str()) == Some("sanitized")
-                                && value.get("tables").is_some_and(|v| v.is_array())
+                                && value.get("tables").is_some_and(|v| v.is_array()))
+                                || (value.get("format").and_then(|s| s.as_str()) == Some("mailcraft-layout-v2")
+                                && value.get("stages").is_some_and(|v| v.is_array())
+                                && value.get("filtered").is_some_and(|v| v.is_object())
+                                && value.get("office").is_some_and(|v| v.is_object())))
+
                                 && json.len() <= MAX_LAYOUT_REPORT_BYTES
                         });
-                    if self.mode != 5 || verified.is_none() {
+                    if !(self.mode == 5 || self.mode == 6) || verified.is_none() {
                         eprintln!("Rejected unexpected layout diagnostic report");
                     } else if let Some(file) = self.files.get(self.selected) {
                         let name = file.file_name().unwrap_or_default().to_string_lossy();
@@ -694,6 +815,20 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         /// Word 12 lottery email uses the shorthand "border:solid
         /// windowtext 1.0pt", unlike Excel's "windowtext .5pt solid".
         /// Keep sender-defined unbordered spacer cells genuinely unbordered.
+        #[test]
+        fn v2_comparison_uses_only_sanitized_inputs_and_no_mail_scripts() {
+            let files=vec![PathBuf::from("comparison.eml")];
+            let doc = comparison_shell(&files,0,"<p>Filtered</p>","<p>Office</p>").unwrap();
+            assert!(doc.contains("mail-frame"));
+            assert!(doc.contains("comparison-frame"));
+            assert!(doc.contains("mailcraft-layout-v2"));
+            assert!(doc.contains("getComputedStyle"));
+            assert!(doc.contains("getBoundingClientRect"));
+            assert!(doc.contains(r#"sandbox="allow-same-origin""#));
+            assert!(!doc.contains("allow-scripts"));
+            assert!(doc.contains("default-src 'none'"));
+        }
+
         #[test]
         fn layout_diagnostics_only_on_explicit_sanitized_mode() {
             let files = vec![PathBuf::from("sample.eml")];
