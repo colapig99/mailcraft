@@ -18,6 +18,7 @@ mod windows {
 
     const MAX_EML_BYTES: u64 = 12 * 1024 * 1024;
     const MAX_FILES: usize = 500;
+    const MAX_LAYOUT_REPORT_BYTES: usize = 450_000;
     const MAX_HTML_BYTES: usize = 1_500_000;
     const CSP: &str = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
     /// The only permitted data: navigations are the two HTML documents that
@@ -88,11 +89,16 @@ mod windows {
         // No email markup can invoke the privileged Wry IPC bridge.
         let options = option_list(files, selected);
         let frame = escape_attribute(email_html);
-        let modes = ["Filtered HTML", "Filtered HTML source", "Original Office HTML (diagnostic)", "Direct filtered document (experimental)", "Office compatibility (experimental)"];
+        let modes = ["Filtered HTML", "Filtered HTML source", "Original Office HTML (diagnostic)", "Direct filtered document (experimental)", "Office compatibility (experimental)", "Layout diagnostics (filtered)"];
         let modes = modes.iter().enumerate().map(|(i, label)| {
             let chosen = if i == mode { " selected" } else { "" };
             format!("<option value=\"{i}\"{chosen}>{label}</option>")
         }).collect::<String>();
+        // Only sanitized HTML may be inspected. Without allow-scripts, email
+        // markup remains inert. allow-same-origin permits only the trusted
+        // parent diagnostic script to read computed DOM geometry.
+        let frame_sandbox = if mode == 5 { "allow-same-origin" } else { "" };
+        let diagnostics = if mode == 5 { layout_diagnostic_script() } else { "" };
         let shell = format!(r#"<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-mailcraft-local-ui'; style-src 'unsafe-inline'; frame-src 'self' about:; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <style>html,body{{margin:0;height:100%;overflow:hidden;font:13px Segoe UI,sans-serif;background:#fff}}
@@ -103,18 +109,97 @@ select{{flex:1;min-width:190px;max-width:880px;padding:5px}}button{{padding:5px 
 <label for="display">Display:</label><select id="display" aria-label="HTML display mode">{modes}</select>
 <button type="button" id="refresh">Refresh list</button>
 <button type="button" id="export">Export filtered HTML</button>
-<span>{} files — local EML only</span></header>
-<iframe title="Isolated email preview" sandbox="" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
+<span>{} files — local EML only</span><span id="layout-status" role="status"></span><button type="button" id="layout-save" hidden>Save layout report</button></header>
+<iframe id="mail-frame" title="Isolated email preview" sandbox="{frame_sandbox}" referrerpolicy="no-referrer" srcdoc="{frame}"></iframe></div>
 <script nonce="mailcraft-local-ui">
 document.getElementById('emails').addEventListener('change', e => window.ipc.postMessage('select:' + e.target.value));
 document.getElementById('refresh').addEventListener('click', () => window.ipc.postMessage('refresh'));
 document.getElementById('export').addEventListener('click', () => window.ipc.postMessage('export-filtered'));
 document.getElementById('display').addEventListener('change', e => window.ipc.postMessage('mode:' + e.target.value));
+{diagnostics}
 </script></body></html>"#, files.len());
         if shell.len() > 2 * 1024 * 1024 { return Err("HTML plus local file picker exceeds the 2 MiB POC limit".into()); }
         Ok(shell)
     }
 
+
+    /// Trusted parent-only JavaScript. The email iframe has no allow-scripts.
+    /// We do not export email text, HTML, or links: only measured geometry and
+    /// computed visual styles for diagnosing legacy Word/Excel table layout.
+    fn layout_diagnostic_script() -> &'static str {
+        r#"
+(function () {
+  const frame = document.getElementById('mail-frame');
+  const status = document.getElementById('layout-status');
+  const save = document.getElementById('layout-save');
+  let report = null;
+  function number(v) { return Number.isFinite(v) ? Math.round(v * 100) / 100 : null; }
+  function rect(el) {
+    const b = el.getBoundingClientRect();
+    return {x:number(b.x), y:number(b.y), width:number(b.width), height:number(b.height)};
+  }
+  function textBounds(el) {
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(el);
+    const boxes = Array.from(range.getClientRects()).slice(0, 80);
+    return {count:boxes.length, minX:number(Math.min(...boxes.map(b=>b.left))),
+      maxX:number(Math.max(...boxes.map(b=>b.right)))};
+  }
+  function calculate() {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc || !doc.body) throw new Error('Sandbox did not permit sanitized DOM inspection');
+      const tables = Array.from(doc.querySelectorAll('table')).slice(0, 30);
+      let cellCount = 0, overflowCount = 0, stopped = false;
+      const output = tables.map((table, tableIndex) => {
+        const st = doc.defaultView.getComputedStyle(table);
+        const rows = Array.from(table.rows).slice(0, 120).map((row, rowIndex) => {
+          const cells = Array.from(row.cells).map((cell, columnIndex) => {
+            if (cellCount >= 1200) { stopped = true; return null; }
+            cellCount++;
+            const cs = doc.defaultView.getComputedStyle(cell);
+            const box = rect(cell);
+            const text = textBounds(cell);
+            const overflow = cell.scrollWidth > cell.clientWidth + 1 ||
+              (text.maxX !== null && text.maxX > box.x + box.width + 2);
+            if (overflow) overflowCount++;
+            return {column:columnIndex, rowSpan:cell.rowSpan, colSpan:cell.colSpan, box,
+              clientWidth:cell.clientWidth, scrollWidth:cell.scrollWidth, textLength:(cell.textContent || '').length,
+              text, overflow, css:{width:cs.width, minWidth:cs.minWidth, maxWidth:cs.maxWidth,
+              whiteSpace:cs.whiteSpace, fontFamily:cs.fontFamily, fontSize:cs.fontSize,
+              lineHeight:cs.lineHeight, textAlign:cs.textAlign, borderLeft:cs.borderLeft,
+              borderRight:cs.borderRight, borderTop:cs.borderTop, borderBottom:cs.borderBottom,
+              backgroundColor:cs.backgroundColor, paddingLeft:cs.paddingLeft, paddingRight:cs.paddingRight}};
+          }).filter(Boolean);
+          return {row:rowIndex, box:rect(row), cells};
+        });
+        return {table:tableIndex, box:rect(table), css:{width:st.width, tableLayout:st.tableLayout,
+          borderCollapse:st.borderCollapse, borderSpacing:st.borderSpacing}, rows};
+      });
+      report = {format:'mailcraft-layout-v1', mode:'sanitized',
+        viewport:{width:frame.clientWidth, height:frame.clientHeight},
+        tableCount:tables.length, cellCount, overflowCount, truncated:stopped, tables:output};
+      status.textContent = tables.length + ' tables / ' + cellCount + ' cells / ' + overflowCount + ' potential overflows';
+      save.hidden = false;
+    } catch (e) {
+      status.textContent = 'Layout diagnostic failed: ' + String(e);
+      save.hidden = true;
+    }
+  }
+  frame.addEventListener('load', () => requestAnimationFrame(() => requestAnimationFrame(calculate)));
+  save.addEventListener('click', () => {
+    if (!report) return;
+    const value = JSON.stringify(report);
+    if (value.length > 400000) {
+      status.textContent = 'Report too large; refine cell limit before exporting';
+      return;
+    }
+    window.ipc.postMessage('layout-report:' + value);
+    status.textContent = 'Layout report requested; see PowerShell for filename';
+  });
+})();
+"#
+    }
 
     /// Legacy Excel and Outlook write border declarations in the order
     /// "windowtext .5pt solid", which Chromium and CSS filters may reject.
@@ -302,7 +387,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         Ok([formatted, inspect, source, direct, office])
     }
 
-    enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered }
+    enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered, LayoutReport(String) }
 
     struct Viewer {
         window: Option<Window>,
@@ -318,7 +403,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
     impl Viewer {
         fn selected_document(&self) -> Result<String, String> {
-            shell_page(&self.views[self.mode], &self.files, self.selected, self.mode)
+            shell_page(&self.views[if self.mode == 5 { 3 } else { self.mode }], &self.files, self.selected, self.mode)
         }
 
         fn show_selected(&mut self) {
@@ -388,8 +473,12 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                         let _ = proxy.send_event(ViewerEvent::Refresh);
                     } else if body == "export-filtered" {
                         let _ = proxy.send_event(ViewerEvent::ExportFiltered);
+                    } else if let Some(json) = body.strip_prefix("layout-report:") {
+                        if json.len() <= MAX_LAYOUT_REPORT_BYTES {
+                            let _ = proxy.send_event(ViewerEvent::LayoutReport(json.to_string()));
+                        }
                     } else if let Some(index) = body.strip_prefix("mode:").and_then(|v| v.parse::<usize>().ok()) {
-                        if index < 5 { let _ = proxy.send_event(ViewerEvent::Mode(index)); }
+                        if index <= 5 { let _ = proxy.send_event(ViewerEvent::Mode(index)); }
                     } else if let Some(index) = body.strip_prefix("select:").and_then(|v| v.parse::<usize>().ok()) {
                         let _ = proxy.send_event(ViewerEvent::Select(index));
                     }
@@ -427,7 +516,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
         fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ViewerEvent) {
             match event {
-                ViewerEvent::Mode(mode) if mode < self.views.len() => {
+                ViewerEvent::Mode(mode) if mode <= 5 => {
                     self.mode = mode;
                     if let Ok(html) = self.selected_document() {
                         if let Ok(mut approved) = self.approved_base64.lock() {
@@ -442,6 +531,37 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 }
                 ViewerEvent::Select(index) if index < self.files.len() => {
                     if self.selected != index { self.selected = index; self.show_selected(); }
+                }
+                ViewerEvent::LayoutReport(json) => {
+                    let verified = serde_json::from_str::<serde_json::Value>(&json)
+                        .ok().filter(|value| {
+                            value.get("format").and_then(|s| s.as_str()) == Some("mailcraft-layout-v1")
+                                && value.get("mode").and_then(|s| s.as_str()) == Some("sanitized")
+                                && value.get("tables").is_some_and(|v| v.is_array())
+                                && json.len() <= MAX_LAYOUT_REPORT_BYTES
+                        });
+                    if self.mode != 5 || verified.is_none() {
+                        eprintln!("Rejected unexpected layout diagnostic report");
+                    } else if let Some(file) = self.files.get(self.selected) {
+                        let name = file.file_name().unwrap_or_default().to_string_lossy();
+                        let mut exported = false;
+                        for number in 1..=99 {
+                            let output = self.directory.join(format!("{name}.layout-{number:02}.json"));
+                            match fs::OpenOptions::new().write(true).create_new(true).open(&output) {
+                                Ok(mut out) => {
+                                    use std::io::Write;
+                                    match out.write_all(json.as_bytes()) {
+                                        Ok(()) => { eprintln!("Layout diagnostic saved: {}", output.display()); exported = true; }
+                                        Err(e) => eprintln!("Layout diagnostic write failed: {e}"),
+                                    }
+                                    break;
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                                Err(e) => { eprintln!("Layout diagnostic export failed: {e}"); break; }
+                            }
+                        }
+                        if !exported { eprintln!("No layout report created"); }
+                    }
                 }
                 ViewerEvent::ExportFiltered => {
                     // Explicit local diagnostic export. It writes only the
@@ -550,6 +670,23 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         /// Word 12 lottery email uses the shorthand "border:solid
         /// windowtext 1.0pt", unlike Excel's "windowtext .5pt solid".
         /// Keep sender-defined unbordered spacer cells genuinely unbordered.
+        #[test]
+        fn layout_diagnostics_only_on_explicit_sanitized_mode() {
+            let files = vec![PathBuf::from("sample.eml")];
+            let default = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 0).unwrap();
+            let diag = shell_page("<table><tr><td>A</td></tr></table>", &files, 0, 5).unwrap();
+            assert!(default.contains(r#"sandbox="""#), "{default}");
+            assert!(!default.contains("layout-report:"));
+            assert!(diag.contains(r#"sandbox="allow-same-origin""#), "{diag}");
+            assert!(!diag.contains("allow-scripts"));
+            assert!(diag.contains("layout-report:"));
+            assert!(diag.contains("getBoundingClientRect"));
+            assert!(diag.contains("getComputedStyle"));
+            assert!(diag.contains("scrollWidth"));
+            assert!(diag.contains("textLength"));
+            assert!(!diag.contains("innerHTML"));
+        }
+
         #[test]
         fn office_font_preservation_is_opt_in() {
             let html = r#"<table><tr><td><font class="font40" face="MingLiU" size="2" color="blue">22:30</font></td></tr></table><script>alert(1)</script>"#;
