@@ -1,0 +1,42 @@
+name: MailCraft WebView2 preview integration (Windows)
+on:
+  push:
+    branches: [feature/html-webview2-integration]
+    paths:
+      - 'apps/mailcraft/**'
+      - 'crates/ui-egui/**'
+      - 'poc/webview2/**'
+      - '.github/workflows/webview2-integrated-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  preview-integration:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test isolated WebView2 preview and sandbox
+        run: cargo test --manifest-path poc/webview2/Cargo.toml
+      - name: Test native UI and legacy behavior
+        run: cargo test -p mailcraft-ui-egui --lib
+      - name: Compile integrated MailCraft Windows EXE
+        run: cargo build --release -p mailcraft
+      - name: Compile isolated WebView2 helper EXE
+        run: cargo build --manifest-path poc/webview2/Cargo.toml --release
+      - name: Stage both EXEs side by side
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/mailcraft.exe dist/
+          Copy-Item poc/webview2/target/release/mailcraft-webview2-poc.exe dist/
+      - name: Upload paired Windows executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: mailcraft-webview2-integration-windows
+          path: dist/*
+          if-no-files-found: error
