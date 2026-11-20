@@ -90,6 +90,33 @@ widths and border gaps) EMLs in both modes. Check existing MIS purchase,
 MIS weekend and Veeam emails for regression in default mode before adopting
 any change. Original Office HTML remains an isolated diagnostic only.
 
+## Opt-in layout diagnostic (new)
+
+Select an EML, then choose **Display → Layout diagnostics (filtered)**.
+This mode uses the **same sanitized HTML** as the existing direct filtered
+preview; no cell widths, fonts, colors or borders are changed. The trusted
+toolbar measures table rows/cells inside a sandboxed iframe and displays the
+number of tables, cells and potential horizontal text overflows.
+
+Click **Save layout report** to write
+`<EML filename>.layout-01.json` into the EXE folder. A later export gets
+`layout-02.json`, etc.; existing reports are never overwritten. JSON includes
+table/cell bounding rectangles, computed style properties, row/column/span,
+text length and overflow flags. It **does not include mail text, HTML or URLs**,
+but cell dimensions/structure can still be confidential. Review before sharing.
+No upload occurs.
+
+For privacy and security, the diagnostic mode alone grants the trusted parent
+access to the *sanitized* iframe DOM (`sandbox="allow-same-origin"` without
+`allow-scripts`). Normal views retain their original stricter sandbox. Do
+not enable this mode by default or for raw Office HTML; this is a local POC,
+not a production hardening assessment.
+
+Compare PCM and lottery reports in this mode and upload the JSON if suitable.
+If possible also compare against browser devtools on the original EML.
+The report describes the actual **sanitized** layout only, not a browser
+measurement of the raw EML, so it cannot by itself prove why results diverge.
+
 ## Manual regression matrix (do not commit real customer EMLs)
 
 1. PCM overtime: yellow merged headers, blue headcount cells, historical months.
