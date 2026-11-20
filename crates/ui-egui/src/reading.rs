@@ -413,6 +413,14 @@ fn message(s: &mut Session, st: &mut UiState, ui: &mut Ui, acts: &mut Vec<Action
                                     acts.push(Action::Run("mail.forwardAsAttachment", json!({})));
                                     ui.close();
                                 }
+                                // Experimental read-only browser view: never enabled by default.
+                                // Keep the native egui reader and encrypted/signed mail unchanged.
+                                if cfg!(target_os = "windows") && p.had_html && r.security.is_none()
+                                    && ui.button("Preview in WebView2 (experimental)").clicked()
+                                {
+                                    acts.push(Action::PreviewWebView2);
+                                    ui.close();
+                                }
                                 if ui.button(tl!("View message source")).clicked() {
                                     acts.push(Action::Run("message.source", json!({"key": r.key.to_id()})));
                                     ui.close();
