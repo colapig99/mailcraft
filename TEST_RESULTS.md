@@ -52,3 +52,19 @@ Sanitized diagnostic JSON may reveal table structure; inspect before sharing. So
 - Regression verdict:
 - Root cause, if verified:
 - Next action / owner:
+
+## 2026-11-20 — User-provided Windows screenshots of Build #46 (manual visual evidence; partial)
+
+Evidence: six screenshots supplied in ChatGPT conversation after run #46 download. Screenshots themselves are **not checked into this public repository**; source EMLs remain private. Assumed tested artifact: downloaded #46 POC per preceding conversation; executable checksum, Windows edition, scale and WebView2 runtime: 待核實. Source code branch: `feature/html-webview2-poc`, `bc543382569c11f0428359e8586c99720ceb775f`.
+
+1. **PCM overtime, paired screenshots:** In `Filtered HTML`, several numeric values visibly intrude/overlap with adjacent cell content (e.g. first table overtime totals and monthly accumulated hours). In `Office compatibility (experimental)`, comparable rows are visibly separated and legible, including `19.5`, `39.0`, `208.0`, and monthly totals. **Manual visual: improvement supported; conditional PASS for the overlapping-numbers symptom**, not a blanket PASS for all Excel layout fidelity. Table column widths and typography/layout differ visibly between modes; exact Outlook-reference fidelity not assessed. Same viewport/DPI: 待核實.
+2. **Lottery issue #3, paired screenshots:** `Filtered HTML` and `Office compatibility` captures have different visible content/placement: the Office capture shows a `Subject:` line, more quoted mail and footer while the filtered capture starts closer to the lottery table. The table itself appears broadly similar, without obvious new font shrinkage in the visible cells, but screenshots are NOT aligned to a common viewport/scroll position. **Manual visual verdict: 待核實; cannot prove text/body preservation or pixel equivalence.** Determine if different content is due to scroll position, variant selection, message processing or another factor before considering any fix.
+3. **Lottery issue #1:** Two images both have `Office compatibility (experimental)` selected; the captures look effectively identical. This is **not** a filtered-vs-Office comparison, so **regression verdict: 待核實**.
+4. **General normal HTML:** No clearly identified paired normal-HTML control screenshots supplied: **待核實**.
+5. CI #46 succeeded (automated); no production reader integration demonstrated. No code modifications made based on these screenshots.
+
+### Focused next validation
+- Repeat lottery issue #3 at the same window dimensions and scroll position; use **Filtered HTML** then **Office compatibility** for the same EML and take whole-page/matching-region captures. Verify quoted body, subject header, fonts and border/width fidelity. If content truly differs, inspect exact sanitized HTML; do not infer that the Excel gate is to blame.
+- Repeat lottery issue #1 in both different modes (the current two screenshots show the same Office mode).
+- Run one normal HTML control in both modes.
+- Keep PCM as a documented positive partial fix; inspect any shifted column geometry against Outlook 2007 original before signing off.
