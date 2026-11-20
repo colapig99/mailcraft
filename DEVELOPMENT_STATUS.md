@@ -68,3 +68,9 @@ At each significant test/commit: write actual branch + SHA, Action run + job con
 - New workflow: `.github/workflows/webview2-integrated-windows.yml`. Build #1 run `44711637402` was IN_PROGRESS at review. The isolated WebView2 POC tests had passed; native UI tests and Windows app/helper release artifacts **待核實**.
 - Existing LDAP, Public Folder and RSS feature heads are ancestors of the branch according to GitHub compare. `feature/html-table-rendering` has DIVERGED (17 commits behind its own side relative to integration); never auto-merge or overwrite this branch. Preserve parallel work.
 - **Not production ready**: this opens a standalone read-only child process, NOT an embedded WebView2 pane. CID, links, focus/overlay/DPI lifecycle and production-grade CSS sanitization remain outstanding. Do not enable by default or merge without Windows and security regression evidence. See `docs/webview2-integration.md` on the integration branch.
+
+## 2026-11-20 — Integration workflow efficiency update
+
+- Feature branch `feature/html-webview2-integration` now has parallel Windows build and UI regression jobs. CI workflow revision: `e6626444e0c5aed3ab6ac852613d8311c6f73678`, integration design doc update `175bdf2ffb9aed3e2c98b50e468130efea7c199c`.
+- **Windows Build #2**, run id `44712589286`, has started. Its `windows-exes` job is compiling `mailcraft.exe` while `ui-regression` runs independently. At last check both jobs still running: **artifact NOT yet verified / 待核實**. Earlier Build #1 confirmed the WebView2 POC/sandbox test passed but was still on sequential UI testing at review.
+- Windows client manual launch, mail-to-stdin transfer, rendering and fallback remain **待核實**. No download link may be claimed until a successful artifact actually exists. This branch remains isolated and unmerged.
