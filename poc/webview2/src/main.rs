@@ -523,6 +523,20 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         Ok([formatted, inspect, source, direct, office])
     }
 
+    /// One source of truth for the active mode, whether switching modes or
+    /// changing the selected EML. Never silently reset to Filtered HTML.
+    fn document_for_mode(
+        views: &[String; 5], files: &[PathBuf], selected: usize, mode: usize
+    ) -> Result<String, String> {
+        if mode == 6 {
+            comparison_shell(files, selected, &views[3], &views[4])
+        } else if mode <= 5 {
+            shell_page(&views[if mode == 5 { 3 } else { mode }], files, selected, mode)
+        } else {
+            Err("Invalid WebView2 display mode".into())
+        }
+    }
+
     enum ViewerEvent { Select(usize), Mode(usize), Refresh, ExportFiltered, LayoutReport(String) }
 
     struct Viewer {
@@ -539,11 +553,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
 
     impl Viewer {
         fn selected_document(&self) -> Result<String, String> {
-            if self.mode == 6 {
-                comparison_shell(&self.files, self.selected, &self.views[3], &self.views[4])
-            } else {
-                shell_page(&self.views[if self.mode == 5 { 3 } else { self.mode }], &self.files, self.selected, self.mode)
-            }
+            document_for_mode(&self.views, &self.files, self.selected, self.mode)
         }
 
         fn show_selected(&mut self) {
@@ -552,13 +562,14 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
                 let data = fs::read(path).map_err(|e| format!("Unable to read selected EML: {e}"))?;
                 if data.len() as u64 > MAX_EML_BYTES { return Err("EML exceeds 12 MiB limit".into()); }
                 let views = pages(&data)?;
-                let html = shell_page(&views[0], &self.files, self.selected, 0)?;
+                let html = document_for_mode(&views, &self.files, self.selected, self.mode)?;
                 Ok::<_, String>((views, html))
             })();
             match result {
                 Ok((views, html)) => {
                     self.views = views;
-                    self.mode = 0;
+                    // Preserve selected display mode across EML changes.
+                    eprintln!("EML switched: mode={} (0=filtered, 4=Office experiment, 5/6=diagnostics)", self.mode);
                     let encoded = [STANDARD.encode(html.as_bytes()), String::new()];
                     if let Ok(mut allowed) = self.approved_base64.lock() { *allowed = encoded; }
                     if let Some(webview) = &self.webview {
@@ -815,6 +826,31 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         /// Word 12 lottery email uses the shorthand "border:solid
         /// windowtext 1.0pt", unlike Excel's "windowtext .5pt solid".
         /// Keep sender-defined unbordered spacer cells genuinely unbordered.
+        #[test]
+        fn switching_eml_maintains_explicit_display_mode() {
+            let files = vec![PathBuf::from("first.eml"), PathBuf::from("second.eml")];
+            let views_a = [
+                "<p>default A</p>".into(), "<pre>source A</pre>".into(),
+                "<p>raw A</p>".into(), "<p>direct A</p>".into(),
+                "<p>office A</p>".into()
+            ];
+            let views_b = [
+                "<p>default B</p>".into(), "<pre>source B</pre>".into(),
+                "<p>raw B</p>".into(), "<p>direct B</p>".into(),
+                "<p>office B</p>".into()
+            ];
+            let before = document_for_mode(&views_a, &files, 0, 4).unwrap();
+            let after = document_for_mode(&views_b, &files, 1, 4).unwrap();
+            assert!(before.contains("office A"));
+            assert!(after.contains("office B"));
+            assert!(!after.contains("default B"));
+            assert!(after.contains(r#"<option value="4" selected>Office compatibility (experimental)</option>"#));
+            let compare = document_for_mode(&views_b, &files, 1, 6).unwrap();
+            assert!(compare.contains("mailcraft-layout-v2"));
+            assert!(compare.contains(r#"<option value="6" selected>Layout Diagnostic V2 (compare)</option>"#));
+            assert!(document_for_mode(&views_b, &files, 1, 7).is_err());
+        }
+
         #[test]
         fn v2_comparison_uses_only_sanitized_inputs_and_no_mail_scripts() {
             let files=vec![PathBuf::from("comparison.eml")];
