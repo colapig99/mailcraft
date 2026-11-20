@@ -398,7 +398,7 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
     /// A false negative stays with the known-safe default, never broadens
     /// experimental formatting to unrelated Word/Veeam/lottery mail.
     fn is_excel_numeric_html(source: &str) -> bool {
-        let numeric_cell = regex::Regex::new(r"(?i)<td\\b[^>]*\\bx:num\\s*=")
+        let numeric_cell = regex::Regex::new(r"(?i)<td\b[^>]*\bx:num\s*=")
             .expect("constant regex");
         numeric_cell.is_match(source)
             && source.to_ascii_lowercase().contains("mso-spacerun")
@@ -848,28 +848,25 @@ document.getElementById('display').addEventListener('change', e => window.ipc.po
         /// Keep sender-defined unbordered spacer cells genuinely unbordered.
         #[test]
         fn experimental_office_mode_is_excel_only_and_preserves_word_fonts() {
-            let excel = concat!(
-                "From: a@example.invalid\\r\\nMIME-Version: 1.0\\r\\n",
-                "Content-Type: text/html; charset=utf-8\\r\\n\\r\\n",
-                "<table><tr><td x:num=\\"3\\"><span style=\\"mso-spacerun: yes\\">&nbsp;&nbsp;</span>3</td>",
-                "<td>15:30</td></tr></table>"
-            ).replace("\\\\r", "\\r").replace("\\\\n", "\\n");
+            let header = "From: a@example.invalid\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+            let excel = format!(
+                r#"{header}<table><tr><td x:num="3"><span style="mso-spacerun: yes">&nbsp;&nbsp;</span>3</td><td>15:30</td></tr></table>"#
+            );
             let x = pages(excel.as_bytes()).unwrap();
             assert!(is_excel_numeric_html(&excel));
             assert_ne!(x[3], x[4], "PCM-specific mode should remove numeric padding");
             assert!(x[4].contains("15:30"));
-            let word = concat!(
-                "From: a@example.invalid\\r\\nMIME-Version: 1.0\\r\\n",
-                "Content-Type: text/html; charset=utf-8\\r\\n\\r\\n",
-                "<table class=\\"MsoNormalTable\\" width=\\"588\\" style=\\"width:352.7pt\\">",
-                "<tr><td><font face=\\"Times New Roman\\" size=\\"2\\">Lottery</font></td></tr></table>"
-            ).replace("\\\\r", "\\r").replace("\\\\n", "\\n");
+
+            let word = format!(
+                r#"{header}<table class="MsoNormalTable" width="588" style="width:352.7pt"><tr><td><font face="Times New Roman" size="2">Lottery</font></td></tr></table>"#
+            );
             let w = pages(word.as_bytes()).unwrap();
             assert!(!is_excel_numeric_html(&word));
             assert_eq!(w[3], w[4], "Word emails must use unchanged sanitized formatting");
-            let generic = "From: a@example.invalid\\r\\nMIME-Version: 1.0\\r\\nContent-Type: text/html; charset=utf-8\\r\\n\\r\\n<table><tr><td>Veeam</td></tr></table>";
-            let g = pages(generic.replace("\\\\r", "\\r").replace("\\\\n", "\\n").as_bytes()).unwrap();
-            assert_eq!(g[3],g[4]);
+
+            let generic = format!("{header}<table><tr><td>Veeam</td></tr></table>");
+            let g = pages(generic.as_bytes()).unwrap();
+            assert_eq!(g[3], g[4]);
         }
 
         #[test]
